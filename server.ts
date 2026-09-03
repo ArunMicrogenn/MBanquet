@@ -109,7 +109,72 @@ Rules:
     }
   });
 
-  app.post("/api/parse-booking", async (req, res) => {    try {      const { transcript } = req.body;            const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });            const prompt = `You are an AI assistant for a banquet hall booking system. Extract the booking details from the user's spoken transcript.Transcript: "${transcript}"Available Halls: "Crystal Ballroom", "Garden Lawn", "Ruby Suite"Available Event Types: "Wedding", "Conference", "Birthday", or identify from context.Extract these fields:1. customerName (string)2. eventType (string, default "Wedding")3. pax (number, default 50)4. halls (array of strings, matched to available halls)5. startDate (YYYY-MM-DD string, deduce if possible)6. endDate (YYYY-MM-DD string, deduce if possible)Return ONLY a valid JSON object with these keys. If a value is missing, return an empty string or the default. Do not use markdown backticks.{  "customerName": "...",  "eventType": "...",  "pax": ...,  "halls": ["..."],  "startDate": "...",  "endDate": "..."}`;      const response = await ai.models.generateContent({        model: "gemini-3.6-flash",        contents: prompt,      });      let responseText = response.text;      if (!responseText) throw new Error("No response from AI");            responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();      const parsedData = JSON.parse(responseText);            res.json(parsedData);    } catch (error) {      console.error("AI Parse Booking Error:", error);      res.status(500).json({ error: "Failed to parse booking details" });    }  });  app.post("/api/send-email", async (req, res) => {
+  app.post("/api/parse-booking", async (req, res) => {
+    try {
+      const { transcript } = req.body;
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      const today = new Date();
+      const currentYear = today.getFullYear();
+      const currentDateStr = today.toISOString().slice(0, 10);
+      const dayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' });
+
+      const prompt = `You are an AI assistant for a premier banquet hall booking system.
+Extract the booking details from the user's spoken or typed transcript.
+
+Transcript: "${transcript}"
+
+Current Date Context (Use this to resolve relative dates like "tomorrow", "next Friday", "this weekend", "September 15"):
+- Today is: ${currentDateStr} (${dayOfWeek})
+- Current Year: ${currentYear}
+
+Available Halls (Select closest matching halls from this list):
+- "Crystal Ballroom"
+- "Garden Lawn"
+- "Ruby Suite"
+
+Available Event Types (Map to the closest match):
+- "Wedding"
+- "Conference"
+- "Birthday"
+- "Corporate Meeting"
+- "Seminar / Training"
+
+Extract the following fields and return as a JSON object:
+1. customerName: Name of the person or company booking the hall. Use "New Customer" if not specified.
+2. eventType: One of the available event types. Choose "Wedding" or "Corporate Meeting" if unclear from context.
+3. pax: Number of attendees. Look for numbers near "pax", "people", "guests", "members", "attendees", "seats". Default to 50 if missing.
+4. halls: Array of matching hall names. If a user specifies a hall (e.g., "Crystal" or "Ruby" or "Lawn"), map it to the full name. Default to ["Crystal Ballroom"] if missing.
+5. startDate: Deduce the date as "YYYY-MM-DD" based on the transcript and current date context.
+6. endDate: Deduce the date as "YYYY-MM-DD". If the event is single-day, set endDate same as startDate.
+
+Return ONLY a valid, raw JSON object with these keys, with no markdown backticks, prefix or suffix:
+{
+  "customerName": "string",
+  "eventType": "string",
+  "pax": number,
+  "halls": ["string"],
+  "startDate": "YYYY-MM-DD",
+  "endDate": "YYYY-MM-DD"
+}`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: prompt,
+      });
+
+      let responseText = response.text;
+      if (!responseText) throw new Error("No response from AI");
+      
+      responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsedData = JSON.parse(responseText);
+      
+      res.json(parsedData);
+    } catch (error) {
+      console.error("AI Parse Booking Error:", error);
+      res.status(500).json({ error: "Failed to parse booking details" });
+    }
+  });  app.post("/api/send-email", async (req, res) => {
     try {
       const { templateName, recipient, subject, body } = req.body;
       console.log(`\n[EMAIL SERVICE] Sending '${templateName}' to ${recipient}...`);

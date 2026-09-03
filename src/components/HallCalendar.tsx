@@ -34,7 +34,9 @@ import {
   DollarSign,
   Trash2,
   Receipt,
-  Building2
+  Building2,
+  Shuffle,
+  ArrowUpCircle
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -443,7 +445,7 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
     }
   };
 
-  const handleAddAdvance = (e: React.FormEvent) => {
+  const handleAddAdvance = (e: any) => {
     e.preventDefault();
     const amount = parseFloat(newAdvAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -521,6 +523,170 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
 
     setSelectedEvent(updatedEvent);
     onUpdateBooking(selectedEvent, updatedEvent);
+  };
+
+  // Automated Conflict Resolution Options Calculations
+  const conflictResolutionOptions = useMemo(() => {
+    if (!conflictAlert) return null;
+
+    const { movedBooking, conflictingBooking, hallName } = conflictAlert;
+    
+    // 1. Find vacant alternative halls for MOVED booking at the SAME requested time
+    const otherHalls = ['Crystal Ballroom', 'Ruby Suite', 'Garden Lawn'].filter(h => h.toLowerCase() !== hallName.toLowerCase());
+    const mTime = getTimestamps(movedBooking.start, movedBooking.end);
+    
+    const availableAlternativeHalls = otherHalls.filter(hName => {
+      const overlap = events.some(b => {
+        if (b.id === movedBooking.id || b.status === 'Cancelled') return false;
+        const bHalls = b.halls || (b.hall ? b.hall.split(',').map((h: string) => h.trim()) : []);
+        const hasHallOverlap = bHalls.some((h: string) => h.toLowerCase() === hName.toLowerCase());
+        if (!hasHallOverlap) return false;
+        
+        const bTime = getTimestamps(b.start, b.end);
+        return mTime.start < bTime.end && mTime.end > bTime.start;
+      });
+      return !overlap;
+    });
+
+    // 2. Find alternative slots in the ORIGINAL requested hall (where it is vacant)
+    const originalStart = new Date(movedBooking.start);
+    const durationMs = mTime.end - mTime.start;
+    
+    const candidates = [
+      { label: 'Same Day (4 hrs later)', offsetHours: 4 },
+      { label: 'Same Day (4 hrs earlier)', offsetHours: -4 },
+      { label: 'Next Day (Same time)', offsetDays: 1 },
+      { label: 'Previous Day (Same time)', offsetDays: -1 },
+      { label: 'Next Saturday (Same time)', targetDay: 6 },
+      { label: 'Next Sunday (Same time)', targetDay: 0 }
+    ];
+
+    const alternativeSlots: { label: string; start: string; end: string }[] = [];
+
+    candidates.forEach(cand => {
+      let testStart = new Date(originalStart);
+      if (cand.offsetHours !== undefined) {
+        testStart = new Date(originalStart.getTime() + cand.offsetHours * 3600 * 1000);
+      } else if (cand.offsetDays !== undefined) {
+        testStart = new Date(originalStart.getTime() + cand.offsetDays * 24 * 3600 * 1000);
+      } else if (cand.targetDay !== undefined) {
+        testStart.setDate(originalStart.getDate() + (cand.targetDay - originalStart.getDay() + 7) % 7);
+        if (testStart.toDateString() === originalStart.toDateString()) {
+          testStart.setDate(testStart.getDate() + 7);
+        }
+      }
+
+      const testEnd = new Date(testStart.getTime() + durationMs);
+      const startStr = testStart.toISOString().slice(0, 19);
+      const endStr = testEnd.toISOString().slice(0, 19);
+
+      const overlaps = events.some(b => {
+        if (b.id === movedBooking.id || b.status === 'Cancelled') return false;
+        const bHalls = b.halls || (b.hall ? b.hall.split(',').map((h: string) => h.trim()) : []);
+        const hasHallOverlap = bHalls.some((h: string) => h.toLowerCase() === hallName.toLowerCase());
+        if (!hasHallOverlap) return false;
+
+        const bTime = getTimestamps(b.start, b.end);
+        const testStartTime = testStart.getTime();
+        const testEndTime = testEnd.getTime();
+        return testStartTime < bTime.end && testEndTime > bTime.start;
+      });
+
+      if (!overlaps) {
+        alternativeSlots.push({
+          label: cand.label,
+          start: startStr,
+          end: endStr
+        });
+      }
+    });
+
+    // 3. Find if the CONFLICTING booking can be moved to another vacant hall at the SAME time
+    const cTime = getTimestamps(conflictingBooking.start, conflictingBooking.end);
+    const conflictingHalls = conflictingBooking.halls || (conflictingBooking.hall ? conflictingBooking.hall.split(',').map((h: string) => h.trim()) : []);
+    const otherHallsForConflicting = ['Crystal Ballroom', 'Ruby Suite', 'Garden Lawn'].filter(h => !conflictingHalls.some((ch: string) => ch.toLowerCase() === h.toLowerCase()));
+
+    const vacantHallsForConflicting = otherHallsForConflicting.filter(hName => {
+      const overlap = events.some(b => {
+        if (b.id === conflictingBooking.id || b.id === movedBooking.id || b.status === 'Cancelled') return false;
+        
+        const bHalls = b.halls || (b.hall ? b.hall.split(',').map((h: string) => h.trim()) : []);
+        const hasHallOverlap = bHalls.some((h: string) => h.toLowerCase() === hName.toLowerCase());
+        if (!hasHallOverlap) return false;
+
+        const bTime = getTimestamps(b.start, b.end);
+        return cTime.start < bTime.end && cTime.end > bTime.start;
+      });
+      return !overlap;
+    });
+
+    return {
+      availableAlternativeHalls,
+      alternativeSlots: alternativeSlots.slice(0, 3),
+      vacantHallsForConflicting
+    };
+  }, [conflictAlert, events]);
+
+  const handleRelocateMovedBooking = (targetHall: string) => {
+    if (!conflictAlert) return;
+    const { movedBooking } = conflictAlert;
+    const oldBooking = events.find(e => e.id === movedBooking.id || (e.title === movedBooking.title && e.start === movedBooking.start));
+    if (!oldBooking) return;
+
+    const updated = {
+      ...movedBooking,
+      hall: targetHall,
+      halls: [targetHall]
+    };
+
+    const success = onUpdateBooking(oldBooking, updated);
+    if (success) {
+      setConflictAlert(null);
+    }
+  };
+
+  const handleRescheduleMovedBooking = (startStr: string, endStr: string) => {
+    if (!conflictAlert) return;
+    const { movedBooking } = conflictAlert;
+    const oldBooking = events.find(e => e.id === movedBooking.id || (e.title === movedBooking.title && e.start === movedBooking.start));
+    if (!oldBooking) return;
+
+    const updated = {
+      ...movedBooking,
+      start: startStr,
+      end: endStr
+    };
+
+    const success = onUpdateBooking(oldBooking, updated);
+    if (success) {
+      setConflictAlert(null);
+    }
+  };
+
+  const handleRelocateConflictingBooking = (targetHall: string) => {
+    if (!conflictAlert) return;
+    const { movedBooking, conflictingBooking } = conflictAlert;
+    
+    const oldConflicting = events.find(e => e.id === conflictingBooking.id);
+    const oldMoved = events.find(e => e.id === movedBooking.id || (e.title === movedBooking.title && e.start === movedBooking.start));
+    
+    if (!oldConflicting || !oldMoved) return;
+
+    const updatedConflicting = {
+      ...oldConflicting,
+      hall: targetHall,
+      halls: [targetHall]
+    };
+
+    const updatedMoved = {
+      ...movedBooking
+    };
+
+    // Use our enhanced atomic updateBooking with array signature!
+    const success = onUpdateBooking([oldConflicting, oldMoved], [updatedConflicting, updatedMoved]);
+    if (success) {
+      setConflictAlert(null);
+    }
   };
 
   const getTimestamps = (startStr: string, endStr?: string | null) => {
@@ -1173,7 +1339,7 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
       {/* REAL-TIME CONFLICT WARNING MODAL */}
       {conflictAlert && (
         <div className="absolute inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col border border-red-200 animate-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col border border-red-200 animate-in zoom-in-95 duration-150">
             {/* Warning Header */}
             <div className="bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 p-4 text-white flex justify-between items-center shadow-md">
               <div className="flex items-center gap-2.5">
@@ -1187,13 +1353,13 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
               </div>
               <button 
                 onClick={() => setConflictAlert(null)} 
-                className="text-white/80 hover:text-white p-1 hover:bg-white/10 rounded-lg transition-colors"
+                className="text-white/80 hover:text-white p-1 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-5 space-y-3.5 max-h-[75vh] overflow-y-auto">
+            <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
               {/* Alert Description Box */}
               <div className="p-3.5 bg-red-50 rounded-xl border border-red-200 text-xs text-red-900 leading-relaxed flex items-start gap-2.5">
                 <ShieldAlert size={18} className="text-red-600 shrink-0 mt-0.5" />
@@ -1273,13 +1439,127 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
                   <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
                 </button>
               </div>
+
+              {/* AUTOMATED CONFLICT RESOLUTION CENTRE */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4 shadow-sm">
+                <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
+                  <Sparkles size={16} className="text-blue-600 font-bold" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                    ⚡ Automated Conflict Resolution Options
+                  </span>
+                </div>
+
+                {/* OPTION 1: Alternative Halls (Relocate Current Booking) */}
+                <div className="space-y-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Option A: Shift your booking to another free hall at the same time
+                  </div>
+                  {conflictResolutionOptions?.availableAlternativeHalls && conflictResolutionOptions.availableAlternativeHalls.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {conflictResolutionOptions.availableAlternativeHalls.map(hall => {
+                        const isUpgrade = hall === 'Crystal Ballroom';
+                        return (
+                          <div key={hall} className="flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 text-xs">
+                            <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                              <Building2 size={13} className="text-slate-400" />
+                              {hall}
+                              {isUpgrade && (
+                                <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border border-amber-300">
+                                  ⭐ Premium Upgrade
+                                </span>
+                              )}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRelocateMovedBooking(hall)}
+                              className="bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] px-2.5 py-1.5 rounded-md border border-blue-200 transition-colors cursor-pointer"
+                            >
+                              Relocate to This Hall
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-400 italic pl-1">No other halls are free during this time window.</div>
+                  )}
+                </div>
+
+                {/* OPTION 2: Relocate Conflicting Booking (Free-Up original slot) */}
+                <div className="space-y-2 pt-2 border-t border-slate-200">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Option B: Free up original slot by moving the conflicting event
+                  </div>
+                  {conflictResolutionOptions?.vacantHallsForConflicting && conflictResolutionOptions.vacantHallsForConflicting.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {conflictResolutionOptions.vacantHallsForConflicting.map(hall => (
+                        <div key={hall} className="bg-amber-50/40 p-3 rounded-lg border border-amber-200 space-y-2 text-xs">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-semibold text-slate-800">
+                                Move <span className="font-bold text-amber-950">{conflictAlert.conflictingBooking.title}</span>
+                              </p>
+                              <p className="text-[10px] text-slate-500 mt-0.5">
+                                Shift it to <span className="font-semibold text-slate-700">{hall}</span> (which is completely vacant at the same time)
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRelocateConflictingBooking(hall)}
+                            className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] py-1.5 px-3 rounded-md transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Shuffle size={12} />
+                            Move Conflicting Booking & Claim Original Slot
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-400 italic pl-1">Conflicting booking cannot be moved to any other hall (all alternative halls are occupied during this time).</div>
+                  )}
+                </div>
+
+                {/* OPTION 3: Suggest Alternative Times (Reschedule Current Booking) */}
+                <div className="space-y-2 pt-2 border-t border-slate-200">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Option C: Reschedule your booking to a vacant slot in this hall
+                  </div>
+                  {conflictResolutionOptions?.alternativeSlots && conflictResolutionOptions.alternativeSlots.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {conflictResolutionOptions.alternativeSlots.map(slot => {
+                        const slotDate = new Date(slot.start);
+                        return (
+                          <div key={slot.label} className="flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 text-xs">
+                            <div>
+                              <span className="font-bold text-slate-800 block">{slot.label}</span>
+                              <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">
+                                {slotDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} @ {slotDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRescheduleMovedBooking(slot.start, slot.end)}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] px-2.5 py-1.5 rounded-md border border-slate-300 transition-colors cursor-pointer"
+                            >
+                              Reschedule to This Slot
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-400 italic pl-1">No other vacant slots found on surrounding days.</div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
               <button
                 type="button"
                 onClick={() => setConflictAlert(null)}
-                className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+                className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 Dismiss Warning
               </button>

@@ -125,13 +125,54 @@ export default function App() {
   };
 
   const updateBooking = (oldBooking: any, updatedBooking: any) => {
+    if (Array.isArray(oldBooking) && Array.isArray(updatedBooking)) {
+      const hasConflict = updatedBooking.some((up, idx) => {
+        const oldB = oldBooking[idx];
+        return bookings.some(b => {
+          if (oldBooking.includes(b)) return false;
+          if (b.status === 'Cancelled') return false;
+          
+          const requestedHalls = up.halls || (up.hall ? up.hall.split(',').map((h: string) => h.trim()) : []);
+          const existingHalls = b.halls || (b.hall ? b.hall.split(',').map((h: string) => h.trim()) : []);
+          const hasHallOverlap = requestedHalls.some((h: string) => existingHalls.includes(h));
+          if (!hasHallOverlap) return false;
+
+          const startToCheck = new Date(up.start).getTime();
+          const endToCheck = new Date(up.end).getTime();
+          const existingStart = new Date(b.start).getTime();
+          const existingEnd = new Date(b.end).getTime();
+          
+          return startToCheck < existingEnd && endToCheck > existingStart;
+        });
+      });
+
+      if (hasConflict) {
+        setToast({ message: 'Conflict detected during bulk resolution!', type: 'error' });
+        setTimeout(() => setToast(null), 3000);
+        return false;
+      }
+
+      let newBookings = [...bookings];
+      oldBooking.forEach((oldB, idx) => {
+        const up = updatedBooking[idx];
+        newBookings = newBookings.map(b => b === oldB ? { ...up, halls: up.halls || (up.hall ? up.hall.split(',').map((h: string) => h.trim()) : []) } : b);
+      });
+      setBookings(newBookings);
+      setToast({ message: 'Conflict resolved successfully!', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+      return true;
+    }
+
     if (checkConflict(updatedBooking, oldBooking)) {
       setToast({ message: 'Conflict detected across selected halls!', type: 'error' });
       setTimeout(() => setToast(null), 3000);
       return false;
     }
 
-    setBookings(bookings.map(b => b === oldBooking ? updatedBooking : b));
+    const hallsArray = updatedBooking.halls || (updatedBooking.hall ? updatedBooking.hall.split(',').map((h: string) => h.trim()) : []);
+    const finalizedUpdated = { ...updatedBooking, halls: hallsArray, hall: hallsArray.join(', ') };
+
+    setBookings(bookings.map(b => b === oldBooking ? finalizedUpdated : b));
     setToast({ message: 'Booking rescheduled successfully!', type: 'success' });
     setTimeout(() => setToast(null), 3000);
     return true;
@@ -279,7 +320,7 @@ export default function App() {
         </div>
       )}
       <QuickBookingModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onBookingAdd={handleManualBooking} />
-      <QRScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScanSuccess={handleScanSuccess} />
+      <QRScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScanSuccess={handleScanSuccess} bookings={bookings} />
       <AIChatAssistant contextData={{
         bookings,
         dashboardMetrics: {
@@ -312,6 +353,20 @@ export default function App() {
           </div>
           <button onClick={logout} className="text-[11px] font-bold flex items-center justify-center gap-1.5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-800 py-1 rounded-lg transition-colors mt-1">
             <LogOut size={12} /> Sign Out
+          </button>
+        </div>
+
+        {/* Global Quick Action */}
+        <div className="p-3 border-b border-slate-800/60 bg-slate-950/20">
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="w-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-slate-950 font-black py-2.5 px-3.5 rounded-xl shadow-lg hover:shadow-amber-500/10 transition-all hover:scale-[1.01] flex items-center justify-center gap-2 text-xs tracking-wide cursor-pointer border border-amber-300/20"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-950 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-950"></span>
+            </span>
+            + Quick Booking
           </button>
         </div>
 
@@ -539,7 +594,7 @@ export default function App() {
         </header>
         <div className="p-3 flex-1 overflow-auto bg-slate-50">
           {activeView === 'dashboard' ? (
-            <div className="relative h-full">
+            <div className="h-full">
               <Dashboard 
                 setFilter={setFilter}
                 dateRange={dateRange}
@@ -547,13 +602,6 @@ export default function App() {
                 filter={filter}
                 handleBulkImport={handleBulkImport}
               />
-              <button 
-                onClick={() => setIsModalOpen(true)}
-                className="fixed bottom-8 right-8 bg-slate-900 text-amber-400 border border-amber-500/30 hover:bg-slate-800 px-5 py-3 rounded-2xl shadow-xl font-extrabold text-xs transition-all hover:scale-105 flex items-center gap-2 z-50 tracking-wide"
-              >
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                + Quick Booking
-              </button>
             </div>
           ) : activeView === 'calendar' ? (
 

@@ -41,6 +41,10 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
 
   const [isRecording, setIsRecording] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
+  const [lastTranscript, setLastTranscript] = useState('');
+  const [voiceTextPrompt, setVoiceTextPrompt] = useState('');
+  const [voiceError, setVoiceError] = useState('');
+  const [voiceSuccessFields, setVoiceSuccessFields] = useState<string[]>([]);
 
   // Separate Advance Payment Entry States
   const [advancePaidAmount, setAdvancePaidAmount] = useState<number>(0);
@@ -157,9 +161,11 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
   };
 
   const startVoiceInput = () => {
+    setVoiceError('');
+    setVoiceSuccessFields([]);
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser. Try using Chrome.");
+      setVoiceError("Speech recognition is not supported in this browser. Try Chrome.");
       return;
     }
     
@@ -175,23 +181,31 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
     recognition.onresult = async (event: any) => {
       const transcript = event.results[0][0].transcript;
       setIsRecording(false);
+      setLastTranscript(transcript);
       await parseVoiceTranscript(transcript);
     };
 
     recognition.onerror = (event: any) => {
       console.error("Speech recognition error", event.error);
       setIsRecording(false);
+      setVoiceError(`Microphone error: ${event.error}. Ensure microphone access is permitted.`);
     };
 
     recognition.onend = () => {
       setIsRecording(false);
     };
 
-    recognition.start();
+    try {
+      recognition.start();
+    } catch (err: any) {
+      setVoiceError(err.message || "Failed to start microphone.");
+    }
   };
 
   const parseVoiceTranscript = async (transcript: string) => {
     setIsParsing(true);
+    setVoiceError('');
+    setVoiceSuccessFields([]);
     try {
       const res = await fetch('/api/parse-booking', {
         method: 'POST',
@@ -200,19 +214,47 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
       });
       const data = await res.json();
       
-      if (data.customerName) setCustomerName(data.customerName);
-      if (data.eventType) setEventType(data.eventType);
-      if (data.pax) setPax(Number(data.pax));
-      if (data.halls && Array.isArray(data.halls) && data.halls.length > 0) setHalls(data.halls);
-      if (data.startDate) setStartDate(data.startDate);
-      if (data.endDate) setEndDate(data.endDate);
+      const fields: string[] = [];
+      if (data.customerName) {
+        setCustomerName(data.customerName);
+        fields.push(`Customer: ${data.customerName}`);
+      }
+      if (data.eventType) {
+        setEventType(data.eventType);
+        fields.push(`Event: ${data.eventType}`);
+      }
+      if (data.pax) {
+        setPax(Number(data.pax));
+        fields.push(`Guests: ${data.pax}`);
+      }
+      if (data.halls && Array.isArray(data.halls) && data.halls.length > 0) {
+        setHalls(data.halls);
+        fields.push(`Hall(s): ${data.halls.join(', ')}`);
+      }
+      if (data.startDate) {
+        setStartDate(data.startDate);
+        fields.push(`Start: ${data.startDate}`);
+      }
+      if (data.endDate) {
+        setEndDate(data.endDate);
+        fields.push(`End: ${data.endDate}`);
+      }
       
+      setVoiceSuccessFields(fields);
     } catch (err) {
       console.error(err);
-      alert("Failed to parse voice input.");
+      setVoiceError("Failed to parse details. Please try again with clear speech or a typing prompt.");
     } finally {
       setIsParsing(false);
     }
+  };
+
+  const handleTextPromptSubmit = async (e: any) => {
+    e.preventDefault();
+    if (!voiceTextPrompt.trim()) return;
+    setLastTranscript(voiceTextPrompt);
+    await parseVoiceTranscript(voiceTextPrompt);
+    setVoiceTextPrompt('');
   };
 
   const handleSuggestHall = async () => {
@@ -292,19 +334,167 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
         <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">New Booking & Recurrence</h2>
-            <button 
-              type="button"
-              onClick={startVoiceInput}
-              className={`p-1.5 rounded-full transition-colors flex items-center gap-1 text-[10px] font-bold ${isRecording ? 'bg-red-100 text-red-600 animate-pulse' : isParsing ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              title="Voice Input"
-            >
-              {isParsing ? <Loader2 size={12} className="animate-spin" /> : <Mic size={12} />}
-              {isRecording ? 'Listening...' : isParsing ? 'Parsing...' : 'Voice'}
-            </button>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
             <X size={18} />
           </button>
+        </div>
+
+        {/* VOICE & NATURAL LANGUAGE AI ASSISTANT CENTRE */}
+        <div className="mb-4 bg-gradient-to-br from-indigo-50/70 to-blue-50/50 border border-indigo-100 rounded-2xl p-4 shadow-xs relative overflow-hidden">
+          {/* Audio Wave Animations Keyframes */}
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes voiceWave {
+              0%, 100% { height: 6px; }
+              50% { height: 22px; }
+            }
+            .animate-wave-1 { animation: voiceWave 0.7s ease-in-out infinite; }
+            .animate-wave-2 { animation: voiceWave 0.7s ease-in-out infinite 0.12s; }
+            .animate-wave-3 { animation: voiceWave 0.7s ease-in-out infinite 0.24s; }
+            .animate-wave-4 { animation: voiceWave 0.7s ease-in-out infinite 0.36s; }
+            .animate-wave-5 { animation: voiceWave 0.7s ease-in-out infinite 0.48s; }
+          `}} />
+
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl text-white shadow-md relative shrink-0">
+              {isRecording ? (
+                <span className="absolute inset-0 rounded-xl bg-red-500 animate-ping opacity-60"></span>
+              ) : null}
+              <Mic size={16} className={isRecording ? 'text-red-100' : ''} />
+            </div>
+            <div className="flex-1 space-y-1">
+              <h3 className="text-xs font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                AI Voice Booking Assistant
+                <span className="bg-indigo-600 text-white text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-widest scale-95 origin-left">
+                  Gemini-3.8
+                </span>
+              </h3>
+              <p className="text-[10px] leading-relaxed text-slate-500 font-medium">
+                Hold/click mic to dictate details, or type natural sentences below. AI will intelligently extract and auto-fill the whole booking.
+              </p>
+            </div>
+          </div>
+
+          {/* Assistant Interactive Area */}
+          <div className="mt-3.5 flex flex-col gap-2.5">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={startVoiceInput}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer ${
+                  isRecording 
+                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-200' 
+                    : isParsing 
+                      ? 'bg-blue-100 text-blue-700' 
+                      : 'bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 hover:border-indigo-300'
+                }`}
+              >
+                {isRecording ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                    <span>Listening... Click to stop</span>
+                  </>
+                ) : isParsing ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin text-blue-600" />
+                    <span>Gemini is parsing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic size={13} className="text-indigo-600" />
+                    <span>Tap to Speak Booking</span>
+                  </>
+                )}
+              </button>
+
+              {/* Animated wave showing only when listening */}
+              {isRecording && (
+                <div className="flex items-center gap-1 bg-white border border-red-200 rounded-xl px-2.5 h-[34px]">
+                  <div className="w-1 bg-red-500 rounded-full animate-wave-1"></div>
+                  <div className="w-1 bg-orange-500 rounded-full animate-wave-2"></div>
+                  <div className="w-1 bg-amber-500 rounded-full animate-wave-3"></div>
+                  <div className="w-1 bg-yellow-500 rounded-full animate-wave-4"></div>
+                  <div className="w-1 bg-red-400 rounded-full animate-wave-5"></div>
+                </div>
+              )}
+            </div>
+
+            {/* Alternating Text Prompt Input */}
+            <form onSubmit={handleTextPromptSubmit} className="flex gap-1.5">
+              <input
+                type="text"
+                placeholder="e.g. Booking for John Doe, 120 pax, Ruby Suite on Sept 15"
+                value={voiceTextPrompt}
+                onChange={(e: any) => setVoiceTextPrompt(e.target.value)}
+                disabled={isParsing || isRecording}
+                className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-medium"
+              />
+              <button
+                type="submit"
+                disabled={isParsing || isRecording || !voiceTextPrompt.trim()}
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold text-xs px-3 py-1.5 rounded-xl transition-all shadow-xs cursor-pointer"
+              >
+                Analyze
+              </button>
+            </form>
+          </div>
+
+          {/* Transcribed text feedback bubble */}
+          {lastTranscript && (
+            <div className="mt-2.5 bg-white/80 rounded-xl p-2.5 border border-slate-100 text-[11px] font-medium text-slate-600 italic flex items-start gap-1.5 leading-relaxed">
+              <span className="text-slate-400 shrink-0 font-bold">Speech:</span>
+              <span>"{lastTranscript}"</span>
+            </div>
+          )}
+
+          {/* Voice success list */}
+          {voiceSuccessFields.length > 0 && (
+            <div className="mt-2.5 space-y-1">
+              <div className="text-[9px] font-extrabold text-indigo-900 uppercase tracking-wider">
+                ✓ Auto-Populated Booking Fields
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {voiceSuccessFields.map((field, idx) => (
+                  <span key={idx} className="text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/50 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <span className="w-1 h-1 rounded-full bg-emerald-500"></span>
+                    {field}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {voiceError && (
+            <div className="mt-2.5 bg-red-50 text-red-800 rounded-xl p-2.5 border border-red-200 text-xs leading-relaxed font-semibold">
+              ⚠️ {voiceError}
+            </div>
+          )}
+
+          {/* Voice Prompt Presets */}
+          <div className="mt-3 border-t border-indigo-100/60 pt-2.5">
+            <span className="text-[9px] font-extrabold text-indigo-900 uppercase tracking-widest block mb-1.5">
+              💡 Try speaking or clicking a demo preset:
+            </span>
+            <div className="flex flex-col gap-1">
+              {[
+                "Book Crystal Ballroom for Ramesh Wedding with 400 pax on September 12 to 14",
+                "Corporate Conference for TechCorp in Ruby Suite on September 20, 120 guests"
+              ].map((p, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setLastTranscript(p);
+                    parseVoiceTranscript(p);
+                  }}
+                  className="w-full text-left text-[10px] text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100/50 p-1.5 rounded-lg border border-indigo-100/40 bg-white transition-all truncate"
+                >
+                  👉 "{p}"
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -602,7 +792,7 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
                 type="number" 
                 min="0" 
                 value={advancePaidAmount || ''} 
-                onChange={(e) => setAdvancePaidAmount(parseFloat(e.target.value) || 0)}
+                onChange={(e: any) => setAdvancePaidAmount(parseFloat(e.target.value) || 0)}
                 placeholder="e.g. 50000"
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-800" 
               />
@@ -614,7 +804,7 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
               <label className="block text-[10px] font-bold text-slate-500 uppercase">Payment Mode</label>
               <select 
                 value={advancePaymentMode} 
-                onChange={(e) => setAdvancePaymentMode(e.target.value)}
+                onChange={(e: any) => setAdvancePaymentMode(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-800"
               >
                 <option value="Cash / UPI">Cash / UPI</option>
@@ -630,7 +820,7 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
                 type="text" 
                 placeholder="e.g. REC-5521" 
                 value={advanceReceiptNo} 
-                onChange={(e) => setAdvanceReceiptNo(e.target.value)}
+                onChange={(e: any) => setAdvanceReceiptNo(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none" 
               />
             </div>
@@ -643,7 +833,7 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
                 type="text" 
                 placeholder="e.g. UPI-99882211" 
                 value={advanceTxnRef} 
-                onChange={(e) => setAdvanceTxnRef(e.target.value)}
+                onChange={(e: any) => setAdvanceTxnRef(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-xs" 
               />
             </div>
