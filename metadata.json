@@ -1,0 +1,6 @@
+{
+  "name": "Banquet Hall Management System",
+  "description": "A cloud-based, multi-tenant SaaS platform for banquet hall inventory, booking, billing, and event operations.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
