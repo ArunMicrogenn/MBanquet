@@ -42,6 +42,12 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
   const [isRecording, setIsRecording] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
 
+  // Separate Advance Payment Entry States
+  const [advancePaidAmount, setAdvancePaidAmount] = useState<number>(0);
+  const [advancePaymentMode, setAdvancePaymentMode] = useState<string>('Cash / UPI');
+  const [advanceTxnRef, setAdvanceTxnRef] = useState<string>('');
+  const [advanceReceiptNo, setAdvanceReceiptNo] = useState<string>('');
+
   // Compute generated dates preview
   const generatedSchedule = useMemo(() => {
     const startBase = startDate ? new Date(startDate + 'T10:00:00') : new Date('2026-08-27T10:00:00');
@@ -244,16 +250,36 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
       alert("Please select at least one hall.");
       return;
     }
+
+    const initialAdvances = [];
+    if (advancePaidAmount > 0) {
+      initialAdvances.push({
+        id: 'adv-' + Date.now().toString() + '-' + Math.floor(Math.random() * 1000),
+        date: new Date().toISOString().slice(0, 10),
+        amount: advancePaidAmount,
+        paymentMode: advancePaymentMode,
+        txnRef: advanceTxnRef || '',
+        receiptNo: advanceReceiptNo || `REC-${Math.floor(1000 + Math.random() * 9000)}`,
+        receivedBy: 'Manager Rajan',
+        status: 'Realized' as const,
+        remarks: 'Initial deposit paid on registration'
+      });
+    }
     
     const bookingsToAdd = generatedSchedule.map((item, i) => ({
-      id: Date.now().toString() + '-' + i,
+      id: 'B-' + Math.floor(1000 + Math.random() * 9000) + '-' + i,
       title: `${customerName || 'New Booking'} - ${eventType}${recurrence !== 'None' ? ` (${i+1}/${generatedSchedule.length})` : ''}`,
+      customerName: customerName || 'New Booking',
+      eventType,
       start: item.start.toISOString().slice(0, 16),
       end: item.end.toISOString().slice(0, 16),
       halls,
       hall: halls.join(', '),
       pax,
       status,
+      advance: advancePaidAmount,
+      advancePayMode: advancePaymentMode,
+      advances: initialAdvances,
       recurrencePattern: recurrence !== 'None' ? `${recurrence} (${recurrenceInterval})` : undefined
     }));
 
@@ -572,24 +598,56 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
             </div>
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase">Advance Paid (₹)</label>
-              <input type="number" min="0" defaultValue="0" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none" />
+              <input 
+                type="number" 
+                min="0" 
+                value={advancePaidAmount || ''} 
+                onChange={(e) => setAdvancePaidAmount(parseFloat(e.target.value) || 0)}
+                placeholder="e.g. 50000"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-800" 
+              />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase">Payment Mode</label>
-              <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none">
-                <option>Corporate Invoice</option>
-                <option>Bank Transfer</option>
-                <option>Credit Card</option>
-                <option>Cash / UPI</option>
+              <select 
+                value={advancePaymentMode} 
+                onChange={(e) => setAdvancePaymentMode(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-slate-800"
+              >
+                <option value="Cash / UPI">Cash / UPI</option>
+                <option value="UPI / QR Code">UPI / QR Code</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Credit Card">Credit Card</option>
+                <option value="Corporate Invoice">Corporate Invoice</option>
               </select>
             </div>
-            <div className="flex items-end">
-              {/* Spacer */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase">Receipt / Voucher No.</label>
+              <input 
+                type="text" 
+                placeholder="e.g. REC-5521" 
+                value={advanceReceiptNo} 
+                onChange={(e) => setAdvanceReceiptNo(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none" 
+              />
             </div>
           </div>
+
+          {advancePaidAmount > 0 && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase">Transaction ID / Reference No.</label>
+              <input 
+                type="text" 
+                placeholder="e.g. UPI-99882211" 
+                value={advanceTxnRef} 
+                onChange={(e) => setAdvanceTxnRef(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-xs" 
+              />
+            </div>
+          )}
 
           <button 
             type="submit" 

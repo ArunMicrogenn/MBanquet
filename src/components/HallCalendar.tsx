@@ -31,7 +31,10 @@ import {
   Percent,
   Coins,
   AlertCircle,
-  DollarSign
+  DollarSign,
+  Trash2,
+  Receipt,
+  Building2
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -176,6 +179,14 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
   const [showAiModal, setShowAiModal] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [showColorSettings, setShowColorSettings] = useState(false);
+
+  // Separate Advance Payment Entry Form States
+  const [newAdvAmount, setNewAdvAmount] = useState<string>('');
+  const [newAdvMode, setNewAdvMode] = useState<string>('UPI / QR Code');
+  const [newAdvDate, setNewAdvDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [newAdvReceipt, setNewAdvReceipt] = useState<string>('');
+  const [newAdvTxnRef, setNewAdvTxnRef] = useState<string>('');
+  const [newAdvRemarks, setNewAdvRemarks] = useState<string>('');
   const [conflictAlert, setConflictAlert] = useState<{
     movedBooking: any;
     conflictingBooking: any;
@@ -346,6 +357,170 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
       printWindow.print();
       printWindow.close();
     }, 250);
+  };
+
+  const handlePrintAdvanceReceipt = (adv: any) => {
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Advance Payment Receipt - ${adv.receiptNo}</title>
+            <style>
+              body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 600px; margin: 0 auto; line-height: 1.5; }
+              .receipt-card { border: 1px solid #e2e8f0; padding: 30px; border-radius: 12px; background: #fff; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); }
+              .header { text-align: center; border-bottom: 2px dashed #e2e8f0; padding-bottom: 20px; margin-bottom: 20px; }
+              .logo { font-size: 20px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; }
+              .subtitle { font-size: 11px; color: #64748b; text-transform: uppercase; margin-top: 4px; font-weight: 600; }
+              .title { font-size: 14px; font-weight: 700; color: #475569; background: #f1f5f9; padding: 6px 12px; border-radius: 6px; display: inline-block; margin-top: 12px; text-transform: uppercase; }
+              .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 24px 0; font-size: 13px; }
+              .label { font-size: 11px; text-transform: uppercase; font-weight: 700; color: #94a3b8; display: block; margin-bottom: 2px; }
+              .value { font-weight: 600; color: #334155; }
+              .amount-box { text-align: center; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 8px; margin: 24px 0; }
+              .amount-val { font-size: 24px; font-weight: 800; color: #15803d; }
+              .amount-words { font-size: 11px; color: #166534; font-weight: 600; margin-top: 4px; text-transform: uppercase; }
+              .footer { border-top: 1px solid #e2e8f0; padding-top: 20px; margin-top: 30px; display: flex; justify-content: space-between; font-size: 11px; }
+              .sig-line { border-top: 1px solid #94a3b8; width: 140px; margin-top: 35px; text-align: center; padding-top: 5px; font-weight: 700; color: #64748b; }
+            </style>
+          </head>
+          <body>
+            <div class="receipt-card">
+              <div class="header">
+                <div class="logo">Grand Horizon Banquets</div>
+                <div class="subtitle">Official Payment Receipt / Credit Voucher</div>
+                <div class="title">Advance Deposit Voucher</div>
+              </div>
+              <div class="grid">
+                <div>
+                  <span class="label">Receipt Number</span>
+                  <span class="value">${adv.receiptNo}</span>
+                </div>
+                <div>
+                  <span class="label">Payment Date</span>
+                  <span class="value">${new Date(adv.date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                </div>
+                <div>
+                  <span class="label">Booking / Event</span>
+                  <span class="value">${selectedEvent.title}</span>
+                </div>
+                <div>
+                  <span class="label">Allocated Hall</span>
+                  <span class="value">${selectedEvent.hall || 'Main Banquet Hall'}</span>
+                </div>
+                <div>
+                  <span class="label">Payment Mode</span>
+                  <span class="value">${adv.paymentMode}</span>
+                </div>
+                <div>
+                  <span class="label">Reference / TXN ID</span>
+                  <span class="value font-mono">${adv.txnRef || 'N/A'}</span>
+                </div>
+              </div>
+              <div class="amount-box">
+                <span class="label" style="color: #166534">Amount Paid</span>
+                <div class="amount-val">₹${parseFloat(adv.amount).toLocaleString('en-IN')}</div>
+                <div class="amount-words">Remarks: ${adv.remarks || 'Initial Deposit'}</div>
+              </div>
+              <div class="footer">
+                <div>
+                  <p>Received with thanks by:</p>
+                  <p class="value" style="margin-top: 4px;">${adv.receivedBy || 'Authorized Agent'}</p>
+                </div>
+                <div>
+                  <div class="sig-line">Authorized Signatory</div>
+                </div>
+              </div>
+            </div>
+            <script>
+              window.print();
+              setTimeout(() => { window.close(); }, 500);
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+  };
+
+  const handleAddAdvance = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = parseFloat(newAdvAmount);
+    if (isNaN(amount) || amount <= 0) {
+      alert("Please enter a valid positive advance amount.");
+      return;
+    }
+
+    const currentAdvances = selectedEvent.advances || (selectedEvent.advance > 0 ? [{
+      id: 'legacy-adv',
+      date: new Date(selectedEvent.start).toISOString().slice(0, 10),
+      amount: selectedEvent.advance,
+      paymentMode: selectedEvent.advancePayMode || 'UPI',
+      txnRef: 'LEGACY-REF',
+      receiptNo: 'REC-LEGACY',
+      receivedBy: 'Manager Rajan',
+      status: 'Realized' as const,
+      remarks: 'Initial Booking Deposit'
+    }] : []);
+
+    const newEntry = {
+      id: 'adv-' + Date.now().toString() + '-' + Math.floor(Math.random() * 1000),
+      date: newAdvDate || new Date().toISOString().slice(0, 10),
+      amount: amount,
+      paymentMode: newAdvMode,
+      txnRef: newAdvTxnRef || '',
+      receiptNo: newAdvReceipt || `REC-${Math.floor(1000 + Math.random() * 9000)}`,
+      receivedBy: 'Manager Rajan',
+      status: 'Realized' as const,
+      remarks: newAdvRemarks || 'Additional advance deposit'
+    };
+
+    const updatedAdvances = [...currentAdvances, newEntry];
+    const totalAdvance = updatedAdvances.reduce((sum, item) => sum + (item.status === 'Realized' ? item.amount : 0), 0);
+
+    const updatedEvent = {
+      ...selectedEvent,
+      advance: totalAdvance,
+      advancePayMode: newAdvMode,
+      advances: updatedAdvances
+    };
+
+    setSelectedEvent(updatedEvent);
+    onUpdateBooking(selectedEvent, updatedEvent);
+
+    // Reset Form Fields
+    setNewAdvAmount('');
+    setNewAdvTxnRef('');
+    setNewAdvReceipt('');
+    setNewAdvRemarks('');
+  };
+
+  const handleDeleteAdvance = (advId: string) => {
+    if (!window.confirm("Are you sure you want to void/delete this advance entry? This action is irreversible and will reduce the booking's total advance paid.")) return;
+
+    const currentAdvances = selectedEvent.advances || (selectedEvent.advance > 0 ? [{
+      id: 'legacy-adv',
+      date: new Date(selectedEvent.start).toISOString().slice(0, 10),
+      amount: selectedEvent.advance,
+      paymentMode: selectedEvent.advancePayMode || 'UPI',
+      txnRef: 'LEGACY-REF',
+      receiptNo: 'REC-LEGACY',
+      receivedBy: 'Manager Rajan',
+      status: 'Realized' as const,
+      remarks: 'Initial Booking Deposit'
+    }] : []);
+
+    const updatedAdvances = currentAdvances.filter((a: any) => a.id !== advId);
+    const totalAdvance = updatedAdvances.reduce((sum: number, item: any) => sum + (item.status === 'Realized' ? item.amount : 0), 0);
+
+    const updatedEvent = {
+      ...selectedEvent,
+      advance: totalAdvance,
+      advances: updatedAdvances
+    };
+
+    setSelectedEvent(updatedEvent);
+    onUpdateBooking(selectedEvent, updatedEvent);
   };
 
   const getTimestamps = (startStr: string, endStr?: string | null) => {
