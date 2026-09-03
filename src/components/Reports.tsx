@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Download, FileText, PieChart, Landmark, DollarSign, Calculator, BookOpen } from 'lucide-react';
+import { Download, FileText, PieChart, Landmark, DollarSign, Calculator, BookOpen, ShieldAlert } from 'lucide-react';
 import CashierReport from './CashierReport';
 import GSTReport from './GSTReport';
 import SalesDayBook from './SalesDayBook';
+import CancelResettleReport from './CancelResettleReport';
 
 export default function Reports() {
-  const [reportType, setReportType] = useState<'sales_day_book' | 'tax' | 'cashier' | 'revenue'>('sales_day_book');
+  const [reportType, setReportType] = useState<'sales_day_book' | 'tax' | 'cashier' | 'revenue' | 'cancel_resettle'>('sales_day_book');
 
   const downloadCSV = () => {
     const csvContent = "data:text/csv;charset=utf-8," + 
@@ -70,6 +71,18 @@ export default function Reports() {
           <PieChart size={15} className={reportType === 'revenue' ? 'text-emerald-400' : 'text-slate-500'} />
           Revenue Grouped by Hall
         </button>
+
+        <button 
+          onClick={() => setReportType('cancel_resettle')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            reportType === 'cancel_resettle' 
+              ? 'bg-slate-900 text-white shadow-xs' 
+              : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+          }`}
+        >
+          <ShieldAlert size={15} className={reportType === 'cancel_resettle' ? 'text-red-400' : 'text-slate-500'} />
+          Checkout Cancel & Resettlement Report
+        </button>
       </div>
 
       {/* REPORT CONTENT BODY */}
@@ -83,6 +96,10 @@ export default function Reports() {
 
       {reportType === 'cashier' && (
         <CashierReport />
+      )}
+
+      {reportType === 'cancel_resettle' && (
+        <CancelResettleReport />
       )}
 
       {reportType === 'revenue' && (

@@ -388,7 +388,24 @@ export default function CheckoutSettlement() {
   const [newItemRate, setNewItemRate] = useState(0);
 
   // History and Printable Modal state
-  const [settledHistory, setSettledHistory] = useState<SettledBill[]>(initialSettledHistory);
+  const [settledHistory, setSettledHistory] = useState<SettledBill[]>(() => {
+    try {
+      const saved = localStorage.getItem('banquet_settled_history');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return initialSettledHistory;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('banquet_settled_history', JSON.stringify(settledHistory));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [settledHistory]);
+
   const [searchHistoryQuery, setSearchHistoryQuery] = useState('');
   const [historyFilterType, setHistoryFilterType] = useState<'all' | 'settled' | 'resettled' | 'cancelled'>('all');
   const [billToPrint, setBillToPrint] = useState<SettledBill | null>(null);
@@ -404,6 +421,11 @@ export default function CheckoutSettlement() {
   const [refundMode, setRefundMode] = useState('UPI / QR Code');
   const [refundTxnRef, setRefundTxnRef] = useState('');
   const [cancelledByStaff, setCancelledByStaff] = useState('Manager Rajan');
+
+  // Settled Bill Reinstate State
+  const [reinstatingBill, setReinstatingBill] = useState<SettledBill | null>(null);
+  const [reinstateReason, setReinstateReason] = useState('');
+  const [reinstatedByStaff, setReinstatedByStaff] = useState('Manager Rajan');
 
   // --- RESETTLEMENT STATE & MODALS ---
   const [resettlingBill, setResettlingBill] = useState<SettledBill | null>(null);
@@ -506,6 +528,48 @@ export default function CheckoutSettlement() {
     showToast(`Bill ${cancellingBill.billNo} VOIDED & CANCELLED! Credit note generated.`);
     setCancellingBill(null);
     triggerPrintBill(updatedBill);
+  };
+
+  const handleOpenReinstateBillModal = (bill: SettledBill) => {
+    setReinstatingBill(bill);
+    setReinstateReason('');
+    setReinstatedByStaff('Manager Rajan');
+  };
+
+  const handleConfirmBillReinstate = () => {
+    if (!reinstatingBill) return;
+    if (!reinstateReason.trim()) {
+      showToast('Error: Please provide a reinstatement reason.');
+      return;
+    }
+
+    const timestamp = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const log: ResettlementLog = {
+      resettledAt: timestamp,
+      resettledBy: reinstatedByStaff || 'Manager Rajan',
+      previousGrandTotal: 0,
+      newGrandTotal: reinstatingBill.grandTotal,
+      differentialAmount: reinstatingBill.grandTotal,
+      reason: `[REINSTATED & REACTIVATED] ${reinstateReason.trim()}`,
+      paymentMode: reinstatingBill.paymentMode || 'Original Payment',
+      txnRef: reinstatingBill.txnRef || ''
+    };
+
+    const updatedBill: SettledBill = {
+      ...reinstatingBill,
+      isCancelled: false,
+      cancelledAt: undefined,
+      cancelledBy: undefined,
+      cancellationReason: undefined,
+      refundAmount: undefined,
+      refundMode: undefined,
+      refundTxnRef: undefined,
+      resettlementHistory: [log, ...(reinstatingBill.resettlementHistory || [])]
+    };
+
+    setSettledHistory(prev => prev.map(b => b.billNo === reinstatingBill.billNo ? updatedBill : b));
+    showToast(`Bill ${reinstatingBill.billNo} REINSTATED & REACTIVATED!`);
+    setReinstatingBill(null);
   };
 
   const handleAddChargeItem = () => {
@@ -1370,7 +1434,15 @@ export default function CheckoutSettlement() {
                               <Printer size={13} /> {bill.isCancelled ? 'Credit Note' : 'Print'}
                             </button>
 
-                            {!bill.isCancelled && (
+                            {bill.isCancelled ? (
+                              <button
+                                onClick={() => handleOpenReinstateBillModal(bill)}
+                                className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors shadow-2xs"
+                                title="Reinstate / Reactivate cancelled bill back to Settled status"
+                              >
+                                <Undo2 size={13} /> Reinstate
+                              </button>
+                            ) : (
                               <>
                                 <button
                                   onClick={() => handleOpenResettlementModal(bill)}
@@ -2311,6 +2383,97 @@ export default function CheckoutSettlement() {
                 className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
               >
                 <Ban size={15} /> Confirm Void & Print Credit Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: REINSTATE / REACTIVATE CANCELLED BILL */}
+      {reinstatingBill && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl">
+                  <Undo2 size={24} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">Reinstate & Reactivate Invoice</h3>
+                  <p className="text-xs text-slate-500">Invoice: <span className="font-mono font-bold text-emerald-700">{reinstatingBill.billNo}</span> • Booking <span className="font-mono text-slate-700">{reinstatingBill.bookingId}</span></p>
+                </div>
+              </div>
+              <button
+                onClick={() => setReinstatingBill(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Summary Card */}
+              <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <p className="text-[10px] uppercase text-slate-400 font-bold">Customer Name</p>
+                  <p className="font-bold text-slate-800">{reinstatingBill.customerName}</p>
+                  <p className="text-[10px] text-slate-500">{reinstatingBill.hall} ({reinstatingBill.pax} Pax)</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-slate-400 font-bold">Reactivated Invoice Total</p>
+                  <p className="font-extrabold text-emerald-700 text-sm">₹{reinstatingBill.grandTotal.toLocaleString('en-IN')}</p>
+                  <p className="text-[10px] text-slate-500">Advance Paid: ₹{reinstatingBill.advancePaid.toLocaleString('en-IN')}</p>
+                </div>
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-xs text-emerald-900 flex items-start gap-2">
+                <ShieldCheck size={18} className="text-emerald-600 shrink-0 mt-0.5" strokeWidth={2.5} />
+                <p>
+                  <strong>Security Directive:</strong> Reinstating this invoice will revoke the cancelled/voided status, restore its active entry in the sales books, and mark it back as <strong>SETTLED</strong>. An audit log recording this action will be appended to the transaction trail.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Reason for Reinstatement <span className="text-emerald-600">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={reinstateReason}
+                  onChange={e => setReinstateReason(e.target.value)}
+                  placeholder="e.g. Booking reinstated after guest cleared dual transaction discrepancy / client re-scheduled."
+                  className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                  Authorized By Manager
+                </label>
+                <input
+                  type="text"
+                  value={reinstatedByStaff}
+                  onChange={e => setReinstatedByStaff(e.target.value)}
+                  className="w-full p-2 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none bg-slate-50"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReinstatingBill(null)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBillReinstate}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
+              >
+                <Undo2 size={15} /> Confirm Reinstate & Reactivate
               </button>
             </div>
           </div>
