@@ -580,6 +580,8 @@ export default function App() {
             />
           ) : activeView === 'contracts' ? (
             <ContractGenerator />
+          ) : activeView === 'insights' ? (
+            <HallInsights bookings={bookings} />
           ) : activeView === 'halls_master' ? (
             <HallMasters />
           ) : activeView === 'function_types_master' ? (
