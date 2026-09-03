@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -21,7 +21,17 @@ import {
   Clock,
   Building,
   ArrowRight,
-  ShieldAlert
+  ShieldAlert,
+  Flame,
+  TrendingUp,
+  Copy,
+  Check,
+  Sparkles,
+  Info,
+  Percent,
+  Coins,
+  AlertCircle,
+  DollarSign
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -180,6 +190,57 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
     'Conference': '#8b5cf6',
     'Other': '#64748b'
   });
+
+  // Capacity Heatmap and Sales Planning config state
+  const [maxDailyCapacity, setMaxDailyCapacity] = useState<number>(1000);
+  const [premiumTriggerPct, setPremiumTriggerPct] = useState<number>(75);
+  const [selectedPitch, setSelectedPitch] = useState<{ date: string; dayName: string } | null>(null);
+  const [copiedPitch, setCopiedPitch] = useState<boolean>(false);
+
+  // Dynamic Vacant Weekends in next 60 days
+  const vacantWeekends = useMemo(() => {
+    const list: { date: string; dayName: string }[] = [];
+    const today = new Date();
+    for (let i = 1; i <= 60; i++) {
+      const nextDate = new Date(today.getTime() + i * 24 * 3600 * 1000);
+      const dayOfWeek = nextDate.getDay(); // 0 = Sun, 6 = Sat
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        const year = nextDate.getFullYear();
+        const month = String(nextDate.getMonth() + 1).padStart(2, '0');
+        const day = String(nextDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+        
+        const dayEvents = events.filter(e => e.start && e.start.startsWith(dateStr) && e.status !== 'Cancelled');
+        if (dayEvents.length === 0) {
+          list.push({
+            date: dateStr,
+            dayName: dayOfWeek === 6 ? 'Saturday' : 'Sunday'
+          });
+        }
+      }
+    }
+    return list.slice(0, 5);
+  }, [events]);
+
+  // High occupancy premium dates
+  const highOccupancyDates = useMemo(() => {
+    const datesMap: Record<string, number> = {};
+    events.forEach(e => {
+      if (!e.start || e.status === 'Cancelled') return;
+      const dateStr = e.start.slice(0, 10);
+      datesMap[dateStr] = (datesMap[dateStr] || 0) + (e.pax || 0);
+    });
+
+    return Object.entries(datesMap)
+      .map(([date, pax]) => ({
+        date,
+        pax,
+        pct: (pax / maxDailyCapacity) * 100
+      }))
+      .filter(d => d.pct >= premiumTriggerPct)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(0, 5);
+  }, [events, maxDailyCapacity, premiumTriggerPct]);
 
   const coloredEvents = events.map(e => {
     const parts = e.title.split(' - ');
@@ -388,29 +449,84 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
     }
   };
 
+  const handleDayCellClassNames = (arg: any) => {
+    if (viewMode !== 'capacity') return '';
+
+    const d = arg.date;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+
+    const dayEvents = events.filter(e => {
+      if (!e.start || e.status === 'Cancelled') return false;
+      return e.start.startsWith(dateStr);
+    });
+
+    if (dayEvents.length === 0) {
+      return '!bg-emerald-50/15 hover:!bg-emerald-50/35 transition-colors cursor-pointer';
+    }
+
+    const totalPax = dayEvents.reduce((sum, e) => sum + (e.pax || 0), 0);
+    const pct = (totalPax / maxDailyCapacity) * 100;
+
+    if (pct >= premiumTriggerPct) {
+      return '!bg-rose-100 hover:!bg-rose-200 transition-colors cursor-pointer';
+    } else if (pct > 50) {
+      return '!bg-amber-100 hover:!bg-amber-200/80 transition-colors cursor-pointer';
+    } else if (pct > 30) {
+      return '!bg-orange-100/60 hover:!bg-orange-100 transition-colors cursor-pointer';
+    } else {
+      return '!bg-emerald-100 hover:!bg-emerald-200/80 transition-colors cursor-pointer';
+    }
+  };
+
   const renderDayCellContent = (cellInfo: any) => {
     if (viewMode === 'events') {
       return <span>{cellInfo.dayNumberText}</span>;
     }
 
-    const dateStr = cellInfo.date.toISOString().split('T')[0];
-    const dayEvents = events.filter(e => e.start && e.start.startsWith(dateStr));
+    const d = cellInfo.date;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+
+    const dayEvents = events.filter(e => {
+      if (!e.start || e.status === 'Cancelled') return false;
+      return e.start.startsWith(dateStr);
+    });
     const totalPax = dayEvents.reduce((sum, e) => sum + (e.pax || 0), 0);
-    const capacityPercentage = (totalPax / TOTAL_CAPACITY) * 100;
+    const capacityPercentage = (totalPax / maxDailyCapacity) * 100;
     
-    let statusClass = 'bg-slate-100 text-slate-600';
-    if (totalPax > 0) {
-      if (capacityPercentage > 80) statusClass = 'bg-red-100 text-red-700 font-bold';
-      else if (capacityPercentage > 50) statusClass = 'bg-yellow-100 text-yellow-700 font-bold';
-      else statusClass = 'bg-green-100 text-green-700 font-bold';
+    let statusClass = 'bg-slate-100 text-slate-600 border border-slate-200';
+    if (dayEvents.length > 0) {
+      if (capacityPercentage >= premiumTriggerPct) {
+        statusClass = 'bg-rose-500 text-white font-extrabold border border-rose-600 shadow-2xs';
+      } else if (capacityPercentage > 50) {
+        statusClass = 'bg-amber-500 text-amber-950 font-extrabold border border-amber-600 shadow-2xs';
+      } else if (capacityPercentage > 30) {
+        statusClass = 'bg-orange-400 text-orange-950 font-bold border border-orange-500';
+      } else {
+        statusClass = 'bg-emerald-500 text-white font-extrabold border border-emerald-600 shadow-2xs';
+      }
     }
 
     return (
-      <div className="w-full flex flex-col items-center">
-        <span className="text-sm font-semibold">{cellInfo.dayNumberText}</span>
+      <div className="w-full flex flex-col items-center py-1">
+        <span className={`text-xs font-bold ${dayEvents.length > 0 && viewMode === 'capacity' ? 'text-slate-900 scale-105 font-black' : 'text-slate-500'}`}>
+          {cellInfo.dayNumberText}
+        </span>
         {viewMode === 'capacity' && (
-          <div className={`mt-1 text-[10px] px-1 py-0.5 rounded w-[90%] text-center truncate ${statusClass}`}>
-            {totalPax > 0 ? `${totalPax} / ${TOTAL_CAPACITY} Pax` : 'Empty'}
+          <div className={`mt-1.5 text-[9px] py-1 px-1.5 rounded-lg w-[92%] text-center truncate ${statusClass}`}>
+            {dayEvents.length > 0 ? (
+              <div className="flex flex-col gap-0.5 leading-none">
+                <span className="font-bold">{totalPax} Pax</span>
+                <span className="text-[8px] opacity-90">({Math.round(capacityPercentage)}%)</span>
+              </div>
+            ) : (
+              <span className="text-[8px] font-black uppercase opacity-70">VACANT</span>
+            )}
           </div>
         )}
       </div>
@@ -476,67 +592,201 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
         </span>
       </div>
 
-      <div className="flex-1 min-h-0">
-        {viewMode === 'resources' ? (
-          <ResourceAssignmentTab events={events} onUpdateBooking={onUpdateBooking} />
-        ) : (
-          /* @ts-ignore */
-          <FullCalendar
-            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-            initialView="dayGridMonth"
-            nowIndicator={true}
-            headerToolbar={{
-              left: 'prev,next today',
-              center: 'title',
-              right: 'dayGridMonth,timeGridWeek'
-            }}
-            events={viewMode === 'events' ? coloredEvents : []}
-            height="100%"
-            editable={true}
-            selectable={true}
-            eventDrop={handleEventMoveOrResize}
-            eventResize={handleEventMoveOrResize}
-            eventContent={(eventInfo) => {
-              const isCheckedIn = eventInfo.event.extendedProps.checkedIn;
-              const status = eventInfo.event.extendedProps.status || (isCheckedIn ? 'Completed' : 'Confirmed');
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 min-h-0 relative">
+          {viewMode === 'resources' ? (
+            <ResourceAssignmentTab events={events} onUpdateBooking={onUpdateBooking} />
+          ) : (
+            /* @ts-ignore */
+            <FullCalendar
+              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+              initialView="dayGridMonth"
+              nowIndicator={true}
+              headerToolbar={{
+                left: 'prev,next today',
+                center: 'title',
+                right: 'dayGridMonth,timeGridWeek'
+              }}
+              events={viewMode === 'events' ? coloredEvents : []}
+              height="100%"
+              editable={true}
+              selectable={true}
+              eventDrop={handleEventMoveOrResize}
+              eventResize={handleEventMoveOrResize}
+              eventContent={(eventInfo) => {
+                const isCheckedIn = eventInfo.event.extendedProps.checkedIn;
+                const status = eventInfo.event.extendedProps.status || (isCheckedIn ? 'Completed' : 'Confirmed');
 
-              const statusBadgeMap: Record<string, { bg: string, text: string, icon: string }> = {
-                'Confirmed': { bg: 'bg-emerald-600 text-white', text: 'Confirmed', icon: '✓' },
-                'Provisional': { bg: 'bg-amber-400 text-amber-950 font-black', text: 'Prov', icon: '⏳' },
-                'Inquiry': { bg: 'bg-purple-600 text-white', text: 'Inquiry', icon: '?' },
-                'Cancelled': { bg: 'bg-rose-600 text-white', text: 'Cancelled', icon: '✕' },
-                'Completed': { bg: 'bg-sky-600 text-white', text: 'Done', icon: '✓' }
-              };
+                const statusBadgeMap: Record<string, { bg: string, text: string, icon: string }> = {
+                  'Confirmed': { bg: 'bg-emerald-600 text-white', text: 'Confirmed', icon: '✓' },
+                  'Provisional': { bg: 'bg-amber-400 text-amber-950 font-black', text: 'Prov', icon: '⏳' },
+                  'Inquiry': { bg: 'bg-purple-600 text-white', text: 'Inquiry', icon: '?' },
+                  'Cancelled': { bg: 'bg-rose-600 text-white', text: 'Cancelled', icon: '✕' },
+                  'Completed': { bg: 'bg-sky-600 text-white', text: 'Done', icon: '✓' }
+                };
 
-              const badge = statusBadgeMap[status] || statusBadgeMap['Confirmed'];
-              const isCancelled = status === 'Cancelled';
+                const badge = statusBadgeMap[status] || statusBadgeMap['Confirmed'];
+                const isCancelled = status === 'Cancelled';
 
-              return (
-                <div className="flex items-center justify-between gap-1 overflow-hidden w-full px-1.5 py-0.5 text-xs">
-                  <div className="flex items-center gap-1 min-w-0 flex-1">
-                    {isCheckedIn && (
-                      <span className="bg-emerald-400 text-emerald-950 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[9px] font-black flex-shrink-0" title="Checked In">✓</span>
-                    )}
-                    <span className={`truncate font-semibold ${isCancelled ? 'line-through opacity-80' : ''}`}>
-                      {eventInfo.event.title}
+                return (
+                  <div className="flex items-center justify-between gap-1 overflow-hidden w-full px-1.5 py-0.5 text-xs">
+                    <div className="flex items-center gap-1 min-w-0 flex-1">
+                      {isCheckedIn && (
+                        <span className="bg-emerald-400 text-emerald-950 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[9px] font-black flex-shrink-0" title="Checked In">✓</span>
+                      )}
+                      <span className={`truncate font-semibold ${isCancelled ? 'line-through opacity-80' : ''}`}>
+                        {eventInfo.event.title}
+                      </span>
+                    </div>
+                    <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full uppercase flex-shrink-0 shadow-sm flex items-center gap-0.5 border border-white/20 ${badge.bg}`}>
+                      <span>{badge.icon}</span>
+                      <span className="hidden sm:inline">{badge.text}</span>
                     </span>
                   </div>
-                  <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded-full uppercase flex-shrink-0 shadow-sm flex items-center gap-0.5 border border-white/20 ${badge.bg}`}>
-                    <span>{badge.icon}</span>
-                    <span className="hidden sm:inline">{badge.text}</span>
-                  </span>
+                );
+              }}
+              eventClick={(info) => {
+                const clickedEvent = events.find(e => e.title === info.event.title && e.start === info.event.startStr.slice(0, 19));
+                if (clickedEvent) {
+                  setSelectedEvent(clickedEvent);
+                }
+              }}
+              dayCellContent={renderDayCellContent}
+              dayCellClassNames={handleDayCellClassNames}
+            />
+          )}
+        </div>
+
+          {viewMode === 'capacity' && (
+            <div className="w-full lg:w-80 bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col overflow-y-auto shrink-0 max-h-full space-y-4 shadow-2xs">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-800 flex items-center gap-1.5 uppercase tracking-wide">
+                  <Flame size={16} className="text-rose-500 animate-pulse" /> Heatmap Intelligence
+                </h3>
+                <p className="text-[10px] text-slate-400 font-semibold mt-1 leading-normal">
+                  Utilize color-intensity capacity thresholds to optimize scheduling, quote premiums, and target empty dates.
+                </p>
+              </div>
+
+              {/* Threshold Sliders */}
+              <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-3.5 shadow-3xs">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block border-b border-slate-100 pb-1.5">Capacity Settings</span>
+                
+                <div>
+                  <div className="flex justify-between items-center text-xs font-bold text-slate-600 mb-1">
+                    <span className="flex items-center gap-1"><Users size={12} className="text-slate-400" /> Max Daily Pax</span>
+                    <span className="text-slate-800 font-mono">{maxDailyCapacity} Pax</span>
+                  </div>
+                  <input 
+                    type="range"
+                    min="200"
+                    max="2000"
+                    step="50"
+                    value={maxDailyCapacity}
+                    onChange={(e) => setMaxDailyCapacity(Number((e.target as HTMLInputElement).value))}
+                    className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-850"
+                  />
                 </div>
-              );
-            }}
-            eventClick={(info) => {
-              const clickedEvent = events.find(e => e.title === info.event.title && e.start === info.event.startStr.slice(0, 19));
-              if (clickedEvent) {
-                setSelectedEvent(clickedEvent);
-              }
-            }}
-            dayCellContent={renderDayCellContent}
-          />
-        )}
+
+                <div>
+                  <div className="flex justify-between items-center text-xs font-bold text-slate-600 mb-1">
+                    <span className="flex items-center gap-1"><Percent size={12} className="text-rose-400" /> Premium Peak Limit</span>
+                    <span className="text-rose-700 font-mono">{premiumTriggerPct}%+</span>
+                  </div>
+                  <input 
+                    type="range"
+                    min="50"
+                    max="95"
+                    step="5"
+                    value={premiumTriggerPct}
+                    onChange={(e) => setPremiumTriggerPct(Number((e.target as HTMLInputElement).value))}
+                    className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-850"
+                  />
+                </div>
+              </div>
+
+              {/* Heatmap Color Legend */}
+              <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-2 shadow-3xs">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block border-b border-slate-100 pb-1.5">Intensity Scale</span>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-xs font-semibold">
+                    <span className="w-5 h-5 rounded-md border border-emerald-200/40 bg-emerald-50/15 flex shrink-0"></span>
+                    <span className="text-slate-600 flex-1 text-[11px]">0% (Vacant - High Sales Push)</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold">
+                    <span className="w-5 h-5 rounded-md border border-emerald-300 bg-emerald-100 flex shrink-0"></span>
+                    <span className="text-slate-600 flex-1 text-[11px]">1% - 30% (Low Occupancy)</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold">
+                    <span className="w-5 h-5 rounded-md border border-orange-300 bg-orange-100 flex shrink-0"></span>
+                    <span className="text-slate-600 flex-1 text-[11px]">31% - 50% (Moderate Occupancy)</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold">
+                    <span className="w-5 h-5 rounded-md border border-amber-300 bg-amber-100 flex shrink-0"></span>
+                    <span className="text-slate-600 flex-1 text-[11px]">51% - {premiumTriggerPct-1}% (High Occupancy)</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold">
+                    <span className="w-5 h-5 rounded-md border border-rose-300 bg-rose-100 flex shrink-0"></span>
+                    <span className="text-slate-600 flex-1 text-[11px]">{premiumTriggerPct}%+ (Fully Booked - Peak Rates)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sales Hot Deals / Opportunities (Vacant Weekends) */}
+              <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-2.5 shadow-3xs flex-1 min-h-[160px] flex flex-col">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 flex items-center gap-1 border-b border-slate-100 pb-1.5 shrink-0 font-extrabold">
+                  <Sparkles size={11} className="text-emerald-500 shrink-0" /> Target Hot Deals (0% Booked)
+                </span>
+                <div className="space-y-2 overflow-y-auto flex-1 pr-1">
+                  {vacantWeekends.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 text-center py-4">No empty weekends in the next 60 days.</p>
+                  ) : (
+                    vacantWeekends.map((slot) => (
+                      <div key={slot.date} className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-100 hover:border-emerald-200 transition-colors">
+                        <div className="min-w-0">
+                          <span className="block text-xs font-bold text-slate-700 truncate">{new Date(slot.date).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                          <span className="text-[9px] text-slate-400 font-bold block leading-none">{slot.dayName}</span>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            setSelectedPitch(slot);
+                            setCopiedPitch(false);
+                          }}
+                          className="text-[9.5px] font-extrabold text-emerald-700 hover:bg-emerald-100 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded transition-colors shrink-0 cursor-pointer"
+                        >
+                          Pitch Idea
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Premium Upgrades (High Occupancy Dates) */}
+              <div className="bg-white p-3 rounded-lg border border-slate-200 space-y-2.5 shadow-3xs shrink-0">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-rose-600 flex items-center gap-1 border-b border-slate-100 pb-1.5 font-extrabold">
+                  <TrendingUp size={11} className="text-rose-500 shrink-0" /> Quote Peak Premium ({premiumTriggerPct}%+)
+                </span>
+                <div className="space-y-1.5 max-h-[140px] overflow-y-auto">
+                  {highOccupancyDates.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 text-center py-2">No dates exceed peak trigger threshold.</p>
+                  ) : (
+                    highOccupancyDates.map((item) => (
+                      <div key={item.date} className="flex items-center justify-between p-2 rounded bg-rose-50/50 border border-rose-100 text-[11px]">
+                        <div>
+                          <span className="font-bold text-slate-800">{new Date(item.date).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                          <span className="text-[9px] text-rose-600 font-bold block">{item.pax} Pax Booked</span>
+                        </div>
+                        <span className="bg-rose-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded">
+                          +{Math.round(item.pct)}% Load
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
       </div>
 
       {selectedEvent && (
@@ -857,6 +1107,100 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
                 className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-colors"
               >
                 Dismiss Warning
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CAMPAIGN PITCH MODAL */}
+      {selectedPitch && (
+        <div className="absolute inset-0 z-50 bg-slate-900/55 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col border border-emerald-100 animate-in zoom-in-95 duration-150">
+            <div className="bg-slate-800 p-4 text-white flex justify-between items-center shadow-md">
+              <div className="flex items-center gap-2">
+                <Sparkles size={18} className="text-emerald-400 font-extrabold animate-pulse" />
+                <div>
+                  <h3 className="font-extrabold text-sm tracking-tight leading-none">Weekend Hot Deal Pitch</h3>
+                  <p className="text-[10px] text-slate-300 font-semibold mt-1">High-Converting Sales Outreach Copy</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedPitch(null)} 
+                className="text-white/80 hover:text-white p-1 hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-xs text-emerald-800">
+                <p className="font-bold flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Vacancy Date Targeted: {new Date(selectedPitch.date).toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} ({selectedPitch.dayName})
+                </p>
+                <p className="mt-1 opacity-90 leading-relaxed">
+                  Weekend banquet slots are highly valuable. Send this tailored deal pitch to inquiries, wedding portals, or mailing lists to book this specific date!
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Message Template</span>
+                <div className="relative">
+                  <textarea
+                    readOnly
+                    rows={6}
+                    value={`Dear Customer,
+
+Are you planning a grand celebration or wedding soon? We have a rare weekend opening on *${new Date(selectedPitch.date).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}* at Grand Horizon Banquets!
+
+Book this specific date this week to unlock an exclusive *15% discount on venue rental* and a *complimentary premium LED Uplighting & Decors package upgrade*.
+
+Perfect for gatherings of 150-1000 guests. Let's make your special day magnificent! Reply directly to this message to receive our gourmet menu packages & arrange a VIP site tour.
+
+Warm regards,
+Banquet Sales Team`}
+                    className="w-full text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-3 focus:outline-none resize-none"
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`Dear Customer,
+
+Are you planning a grand celebration or wedding soon? We have a rare weekend opening on ${new Date(selectedPitch.date).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} at Grand Horizon Banquets!
+
+Book this specific date this week to unlock an exclusive 15% discount on venue rental and a complimentary premium LED Uplighting & Decors package upgrade.
+
+Perfect for gatherings of 150-1000 guests. Let's make your special day magnificent! Reply directly to this message to receive our gourmet menu packages & arrange a VIP site tour.
+
+Warm regards,
+Banquet Sales Team`);
+                      setCopiedPitch(true);
+                      setTimeout(() => setCopiedPitch(false), 2000);
+                    }}
+                    className="absolute bottom-3 right-3 flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-sm transition-all cursor-pointer"
+                  >
+                    {copiedPitch ? (
+                      <>
+                        <Check size={12} className="text-emerald-400 font-extrabold animate-in fade-in" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={12} />
+                        Copy text
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2 shrink-0">
+              <button
+                onClick={() => setSelectedPitch(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Close Window
               </button>
             </div>
           </div>
