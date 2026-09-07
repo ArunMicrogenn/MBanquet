@@ -24,6 +24,18 @@ service cloud.firestore {
       allow create: if isAuthenticated() && request.auth.uid == userId;
       allow update, delete: if isAdmin();
     }
+
+    // Rules for date_closures collection
+    match /date_closures/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Rules for daily_audits collection
+    match /daily_audits/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (getUserRole() == 'Admin' || getUserRole() == 'Manager' || getUserRole() == 'Property Owner' || getUserRole() == 'Banquet Manager');
+    }
     
     // Default rule for everything else: Admins can do anything, others read-only for now
     match /{document=**} {

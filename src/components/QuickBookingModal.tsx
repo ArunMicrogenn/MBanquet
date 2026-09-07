@@ -1,11 +1,13 @@
 import { useState, FormEvent, useMemo } from 'react';
 import { X, Sparkles, Loader2, Mic, Calendar, Repeat, Check } from 'lucide-react';
 import { mockFoodPlans } from './MenuManagement';
+import { DateClosure } from '../App';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onBookingAdd: (booking: any) => boolean;
+  dateClosures?: DateClosure[];
 }
 
 const DAYS_OF_WEEK = [
@@ -18,7 +20,7 @@ const DAYS_OF_WEEK = [
   { label: 'S', full: 'Sat', value: 6 },
 ];
 
-export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Props) {
+export default function QuickBookingModal({ isOpen, onClose, onBookingAdd, dateClosures = [] }: Props) {
   const [customerName, setCustomerName] = useState('');
   const [halls, setHalls] = useState<string[]>(['Crystal Ballroom']);
   const [eventType, setEventType] = useState('Wedding');
@@ -149,6 +151,34 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
 
     return schedule;
   }, [startDate, endDate, recurrence, recurrenceInterval, selectedDaysOfWeek, monthlyPattern, endType, recurrenceCount, untilDate]);
+
+  const dateClosureConflict = useMemo(() => {
+    if (!startDate || halls.length === 0) return null;
+
+    for (const session of generatedSchedule) {
+      const sessionDateStr = session.start.toISOString().slice(0, 10);
+      const sessionDate = new Date(sessionDateStr);
+      sessionDate.setHours(12, 0, 0, 0);
+
+      for (const closure of dateClosures) {
+        const closureStart = new Date(closure.date);
+        const closureEnd = new Date(closure.endDate || closure.date);
+        closureStart.setHours(0, 0, 0, 0);
+        closureEnd.setHours(23, 59, 59, 999);
+
+        if (sessionDate >= closureStart && sessionDate <= closureEnd) {
+          if (closure.hallId === 'all' || halls.includes(closure.hallId)) {
+            return {
+              sessionDate: session.formattedDate,
+              reason: closure.reason,
+              hallName: closure.hallId === 'all' ? 'Entire Property (All Halls)' : closure.hallId
+            };
+          }
+        }
+      }
+    }
+    return null;
+  }, [startDate, halls, generatedSchedule, dateClosures]);
 
   if (!isOpen) return null;
 
@@ -839,9 +869,25 @@ export default function QuickBookingModal({ isOpen, onClose, onBookingAdd }: Pro
             </div>
           )}
 
+          {dateClosureConflict && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium flex flex-col gap-1 mt-4">
+              <div className="font-extrabold flex items-center gap-1.5 text-red-800">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-ping"></span>
+                DATE CLOSED/BLOCKED
+              </div>
+              <div>
+                The date <span className="font-bold">{dateClosureConflict.sessionDate}</span> is marked as <span className="font-bold uppercase">Closed</span> for <span className="font-bold">{dateClosureConflict.hallName}</span>.
+              </div>
+              <div className="text-red-600 italic">
+                Reason: "{dateClosureConflict.reason}"
+              </div>
+            </div>
+          )}
+
           <button 
             type="submit" 
-            className="w-full bg-slate-900 text-white py-2.5 rounded-lg text-sm font-bold mt-4 hover:bg-slate-800 transition-colors shadow-sm flex items-center justify-center gap-2"
+            disabled={!!dateClosureConflict}
+            className={`w-full py-2.5 rounded-lg text-sm font-bold mt-4 transition-colors shadow-sm flex items-center justify-center gap-2 ${dateClosureConflict ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300' : 'bg-slate-900 text-white hover:bg-slate-800'}`}
           >
             Confirm {generatedSchedule.length > 1 ? `${generatedSchedule.length} Recurring Bookings` : 'Booking'}
           </button>

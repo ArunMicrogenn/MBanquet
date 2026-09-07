@@ -1,7 +1,7 @@
 import React, { useState, ChangeEvent, useEffect } from 'react';
 import { auth, db, signInWithGoogle, logout } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import HallCalendar from './components/HallCalendar';
 import Customers from './components/Customers';
 import RecentActivities from './components/RecentActivities';
@@ -32,6 +32,7 @@ import StaffManagement from './components/StaffManagement';
 import PublicLobbyView from './components/PublicLobbyView';
 import Dashboard from './components/Dashboard';
 import FunctionProspectus from './components/FunctionProspectus';
+import DailyAudit from './components/DailyAudit';
 import { QrCode, LogOut, Shield, ClipboardList, Building2 } from 'lucide-react';
 
 /**
@@ -39,14 +40,48 @@ import { QrCode, LogOut, Shield, ClipboardList, Building2 } from 'lucide-react';
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export interface DateClosure {
+  id: string;
+  date: string;       // YYYY-MM-DD
+  endDate?: string;   // Optional end date for range closure
+  reason: string;
+  hallId: string;     // "all" or specific hall name e.g. "Crystal Ballroom"
+  propertyId: string; // "prop-1", etc.
+  closedBy: string;
+  createdAt: string;
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  const [dateClosures, setDateClosures] = useState<DateClosure[]>([
+    {
+      id: 'closure-1',
+      date: '2026-12-25',
+      endDate: '2026-12-25',
+      reason: 'Christmas Day Blockout',
+      hallId: 'all',
+      propertyId: 'prop-1',
+      closedBy: 'System Admin',
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: 'closure-2',
+      date: '2026-09-15',
+      endDate: '2026-09-16',
+      reason: 'Annual Air Conditioning Maintenance',
+      hallId: 'Crystal Ballroom',
+      propertyId: 'prop-1',
+      closedBy: 'Manager Rajan',
+      createdAt: new Date().toISOString()
+    }
+  ]);
+
   const [filter, setFilter] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'dashboard' | 'calendar' | 'customers' | 'menu' | 'invoices' | 'property' | 'contracts' | 'insights' | 'halls_master' | 'function_types_master' | 'food_plan_master' | 'seating_type_master' | 'tax_master' | 'session_master' | 'audit_trail' | 'checkout' | 'reports' | 'email_templates' | 'staff_management' | 'function_prospectus'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'calendar' | 'customers' | 'menu' | 'invoices' | 'property' | 'contracts' | 'insights' | 'halls_master' | 'function_types_master' | 'food_plan_master' | 'seating_type_master' | 'tax_master' | 'session_master' | 'audit_trail' | 'checkout' | 'reports' | 'email_templates' | 'staff_management' | 'function_prospectus' | 'daily_audit'>('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [dateRange, setDateRange] = useState('This Month');
@@ -83,6 +118,84 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Fetch date closures
+  useEffect(() => {
+    const fetchClosures = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'date_closures'));
+        if (!querySnapshot.empty) {
+          const loaded: DateClosure[] = [];
+          querySnapshot.forEach((docSnap) => {
+            loaded.push({ id: docSnap.id, ...docSnap.data() } as DateClosure);
+          });
+          setDateClosures(loaded);
+          localStorage.setItem('date_closures', JSON.stringify(loaded));
+        } else {
+          // If Firestore is empty but we have defaults, let's keep defaults and cache them
+          const cached = localStorage.getItem('date_closures');
+          if (cached) {
+            setDateClosures(JSON.parse(cached));
+          } else {
+            localStorage.setItem('date_closures', JSON.stringify(dateClosures));
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching date closures, using local fallback:", err);
+        const cached = localStorage.getItem('date_closures');
+        if (cached) {
+          setDateClosures(JSON.parse(cached));
+        }
+      }
+    };
+    fetchClosures();
+  }, []);
+
+  const handleAddClosure = async (newClosure: DateClosure) => {
+    try {
+      await setDoc(doc(db, 'date_closures', newClosure.id), {
+        date: newClosure.date,
+        endDate: newClosure.endDate || newClosure.date,
+        reason: newClosure.reason,
+        hallId: newClosure.hallId,
+        propertyId: newClosure.propertyId,
+        closedBy: newClosure.closedBy,
+        createdAt: newClosure.createdAt
+      });
+      const updated = [...dateClosures, newClosure];
+      setDateClosures(updated);
+      localStorage.setItem('date_closures', JSON.stringify(updated));
+      setToast({ message: 'Date closure added successfully!', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+      return true;
+    } catch (err) {
+      console.error("Error saving closure to Firestore, doing local-only:", err);
+      const updated = [...dateClosures, newClosure];
+      setDateClosures(updated);
+      localStorage.setItem('date_closures', JSON.stringify(updated));
+      setToast({ message: 'Date closure added (Local Mode)!', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+      return true;
+    }
+  };
+
+  const handleDeleteClosure = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'date_closures', id));
+      const updated = dateClosures.filter(c => c.id !== id);
+      setDateClosures(updated);
+      localStorage.setItem('date_closures', JSON.stringify(updated));
+      setToast({ message: 'Date closure deleted successfully!', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (err) {
+      console.error("Error deleting closure from Firestore, doing local-only:", err);
+      const updated = dateClosures.filter(c => c.id !== id);
+      setDateClosures(updated);
+      localStorage.setItem('date_closures', JSON.stringify(updated));
+      setToast({ message: 'Date closure deleted (Local Mode)!', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    }
+  };
 
   const filteredBookings = filter === 'booking' ? bookings.filter(b => b.title.includes('Booking')) : bookings;
 
@@ -124,6 +237,31 @@ export default function App() {
     });
   };
 
+  const checkDateClosureConflict = (startStr: string, endStr: string, requestedHalls: string[]) => {
+    const startDay = new Date(startStr.slice(0, 10));
+    const endDay = new Date(endStr.slice(0, 10));
+
+    for (const closure of dateClosures) {
+      const closureStart = new Date(closure.date);
+      const closureEnd = new Date(closure.endDate || closure.date);
+      closureStart.setHours(0,0,0,0);
+      closureEnd.setHours(23,59,59,999);
+
+      const bookingStartDay = new Date(startDay);
+      bookingStartDay.setHours(0,0,0,0);
+      const bookingEndDay = new Date(endDay);
+      bookingEndDay.setHours(23,59,59,999);
+
+      const overlaps = bookingStartDay <= closureEnd && bookingEndDay >= closureStart;
+      if (overlaps) {
+        if (closure.hallId === 'all' || requestedHalls.includes(closure.hallId)) {
+          return closure;
+        }
+      }
+    }
+    return null;
+  };
+
   const updateBooking = (oldBooking: any, updatedBooking: any) => {
     if (Array.isArray(oldBooking) && Array.isArray(updatedBooking)) {
       const hasConflict = updatedBooking.some((up, idx) => {
@@ -152,6 +290,18 @@ export default function App() {
         return false;
       }
 
+      // Check date closures during bulk resolution
+      const hasClosureConflict = updatedBooking.some(up => {
+        const requestedHalls = up.halls || (up.hall ? up.hall.split(',').map((h: string) => h.trim()) : []);
+        return checkDateClosureConflict(up.start, up.end, requestedHalls) !== null;
+      });
+
+      if (hasClosureConflict) {
+        setToast({ message: 'Cannot resolve: dates fall on closed/blocked dates!', type: 'error' });
+        setTimeout(() => setToast(null), 4000);
+        return false;
+      }
+
       let newBookings = [...bookings];
       oldBooking.forEach((oldB, idx) => {
         const up = updatedBooking[idx];
@@ -170,6 +320,15 @@ export default function App() {
     }
 
     const hallsArray = updatedBooking.halls || (updatedBooking.hall ? updatedBooking.hall.split(',').map((h: string) => h.trim()) : []);
+    
+    // Check date closures for single booking update
+    const closureConflict = checkDateClosureConflict(updatedBooking.start, updatedBooking.end, hallsArray);
+    if (closureConflict) {
+      setToast({ message: `Cannot reschedule: ${closureConflict.hallId === 'all' ? 'Property' : closureConflict.hallId} is closed on this date (${closureConflict.reason})`, type: 'error' });
+      setTimeout(() => setToast(null), 4000);
+      return false;
+    }
+
     const finalizedUpdated = { ...updatedBooking, halls: hallsArray, hall: hallsArray.join(', ') };
 
     setBookings(bookings.map(b => b === oldBooking ? finalizedUpdated : b));
@@ -185,6 +344,18 @@ export default function App() {
     if (hasConflict) {
       setToast({ message: 'Conflict detected across selected halls or dates!', type: 'error' });
       setTimeout(() => setToast(null), 3000);
+      return false;
+    }
+
+    // Check date closures for new bookings
+    const closureConflict = bookingsToAdd.map(b => {
+      const requestedHalls = b.halls || (b.hall ? b.hall.split(',').map((h: string) => h.trim()) : []);
+      return checkDateClosureConflict(b.start, b.end, requestedHalls);
+    }).find(conflict => conflict !== null);
+
+    if (closureConflict) {
+      setToast({ message: `Booking Failed: ${closureConflict.hallId === 'all' ? 'Property' : closureConflict.hallId} is closed on this date (${closureConflict.reason})`, type: 'error' });
+      setTimeout(() => setToast(null), 4000);
       return false;
     }
     
@@ -319,7 +490,7 @@ export default function App() {
           {toast.message}
         </div>
       )}
-      <QuickBookingModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onBookingAdd={handleManualBooking} />
+      <QuickBookingModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onBookingAdd={handleManualBooking} dateClosures={dateClosures} />
       <QRScannerModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScanSuccess={handleScanSuccess} bookings={bookings} />
       <AIChatAssistant contextData={{
         bookings,
@@ -537,6 +708,12 @@ export default function App() {
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'checkout' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Checkout Settlement
               </button>
               <button 
+                onClick={() => setActiveView('daily_audit')}
+                className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'daily_audit' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
+              >
+                <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'daily_audit' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Daily Audit & Reconciliation
+              </button>
+              <button 
                 onClick={() => setActiveView('audit_trail')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'audit_trail' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
@@ -552,7 +729,7 @@ export default function App() {
         <header className="h-12 bg-white border-b border-slate-200/90 flex items-center justify-between px-4 flex-shrink-0 shadow-2xs">
           <h1 className="text-sm font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-            {activeView === 'dashboard' ? 'Property & Operational Overview' : activeView === 'calendar' ? 'Hall Availability Calendar' : activeView === 'customers' ? 'CRM & Customer Directory' : activeView === 'menu' ? 'Menu & Catering Plans' : activeView === 'venue-mapping' ? 'Venue Mapping Layouts' : activeView === 'function_prospectus' ? 'Function Prospectus (BEO)' : activeView === 'invoices' ? 'Invoices & Billing' : activeView === 'property' ? 'Property Configuration' : activeView === 'contracts' ? 'Contract Generator' : activeView === 'insights' ? 'Hall Yield Insights' : activeView === 'halls_master' ? 'Hall Masters' : activeView === 'function_types_master' ? 'Function Type Masters' : activeView === 'food_plan_master' ? 'Food Plan Masters' : activeView === 'seating_type_master' ? 'Seating Setups' : activeView === 'tax_master' ? 'Tax Setup Masters' : activeView === 'session_master' ? 'Session Masters' : activeView === 'email_templates' ? 'Email Templates' : activeView === 'checkout' ? 'Checkout Settlement' : activeView === 'reports' ? 'Financial & Operations Reports' : activeView === 'staff_management' ? 'Staff & Personnel Directory' : 'Audit Trail'}
+            {activeView === 'dashboard' ? 'Property & Operational Overview' : activeView === 'calendar' ? 'Hall Availability Calendar' : activeView === 'customers' ? 'CRM & Customer Directory' : activeView === 'menu' ? 'Menu & Catering Plans' : activeView === 'venue-mapping' ? 'Venue Mapping Layouts' : activeView === 'function_prospectus' ? 'Function Prospectus (BEO)' : activeView === 'invoices' ? 'Invoices & Billing' : activeView === 'property' ? 'Property Configuration' : activeView === 'contracts' ? 'Contract Generator' : activeView === 'insights' ? 'Hall Yield Insights' : activeView === 'halls_master' ? 'Hall Masters' : activeView === 'function_types_master' ? 'Function Type Masters' : activeView === 'food_plan_master' ? 'Food Plan Masters' : activeView === 'seating_type_master' ? 'Seating Setups' : activeView === 'tax_master' ? 'Tax Setup Masters' : activeView === 'session_master' ? 'Session Masters' : activeView === 'email_templates' ? 'Email Templates' : activeView === 'checkout' ? 'Checkout Settlement' : activeView === 'reports' ? 'Financial & Operations Reports' : activeView === 'staff_management' ? 'Staff & Personnel Directory' : activeView === 'daily_audit' ? 'Daily Audit & Reconciliation' : 'Audit Trail'}
           </h1>
           <div className="flex items-center gap-2.5">
             {/* Global Multi-Property Switcher */}
@@ -605,7 +782,7 @@ export default function App() {
             </div>
           ) : activeView === 'calendar' ? (
 
-            <HallCalendar events={filteredBookings} onUpdateBooking={updateBooking} />
+            <HallCalendar events={filteredBookings} onUpdateBooking={updateBooking} dateClosures={dateClosures} />
           ) : activeView === 'customers' ? (
             <Customers />
           ) : activeView === 'menu' ? (
@@ -625,6 +802,9 @@ export default function App() {
                 selectedProperty.includes('Emerald') || selectedProperty.includes('ECR') ? 'prop-4' : 'prop-1'
               }
               onSelectActiveProperty={(propId, propName) => setSelectedProperty(propName)}
+              dateClosures={dateClosures}
+              onAddClosure={handleAddClosure}
+              onDeleteClosure={handleDeleteClosure}
             />
           ) : activeView === 'contracts' ? (
             <ContractGenerator />
@@ -650,6 +830,13 @@ export default function App() {
             <Reports />
           ) : activeView === 'staff_management' ? (
             <StaffManagement />
+          ) : activeView === 'daily_audit' ? (
+            <DailyAudit 
+              bookings={bookings} 
+              userRole={userRole} 
+              userEmail={user?.email} 
+              onToast={(msg, type) => setToast({ message: msg, type: type })} 
+            />
           ) : (
             <AuditTrail />
           )}

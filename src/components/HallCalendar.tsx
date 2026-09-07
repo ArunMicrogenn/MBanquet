@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { DateClosure } from '../App';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -174,7 +175,15 @@ function ResourceAssignmentTab({ events, onUpdateBooking }: { events: any[], onU
   );
 }
 
-export default function HallCalendar({ events, onUpdateBooking }: { events: any[], onUpdateBooking: (old: any, updated: any) => boolean }) {
+export default function HallCalendar({ 
+  events, 
+  onUpdateBooking, 
+  dateClosures = [] 
+}: { 
+  events: any[], 
+  onUpdateBooking: (old: any, updated: any) => boolean,
+  dateClosures?: DateClosure[] 
+}) {
   const [viewMode, setViewMode] = useState<'events' | 'capacity' | 'resources'>('events');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<any>(null);
@@ -791,13 +800,30 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
   };
 
   const handleDayCellClassNames = (arg: any) => {
-    if (viewMode !== 'capacity') return '';
-
     const d = arg.date;
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}`;
+
+    // Check if the property is globally closed on this day
+    const globalClosure = dateClosures.find(c => {
+      if (c.hallId !== 'all') return false;
+      const start = new Date(c.date);
+      const end = new Date(c.endDate || c.date);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      
+      const current = new Date(dateStr);
+      current.setHours(12, 0, 0, 0);
+      return current >= start && current <= end;
+    });
+
+    if (globalClosure) {
+      return '!bg-red-50 hover:!bg-red-100/80 transition-colors cursor-not-allowed border-l-4 border-l-red-500';
+    }
+
+    if (viewMode !== 'capacity') return '';
 
     const dayEvents = events.filter(e => {
       if (!e.start || e.status === 'Cancelled') return false;
@@ -823,15 +849,49 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
   };
 
   const renderDayCellContent = (cellInfo: any) => {
-    if (viewMode === 'events') {
-      return <span>{cellInfo.dayNumberText}</span>;
-    }
-
     const d = cellInfo.date;
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}`;
+
+    // Check closures for this date
+    const dayClosures = dateClosures.filter(c => {
+      const start = new Date(c.date);
+      const end = new Date(c.endDate || c.date);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      
+      const current = new Date(dateStr);
+      current.setHours(12, 0, 0, 0);
+      return current >= start && current <= end;
+    });
+
+    const isGloballyClosed = dayClosures.some(c => c.hallId === 'all');
+
+    if (viewMode === 'events') {
+      if (dayClosures.length > 0) {
+        return (
+          <div className="w-full flex flex-col items-center py-1">
+            <span className="text-xs font-bold text-slate-500">{cellInfo.dayNumberText}</span>
+            <div className="flex flex-col gap-0.5 mt-1 w-[92%] items-center">
+              {isGloballyClosed ? (
+                <span className="text-[8px] bg-red-100 text-red-700 font-extrabold px-1 rounded-sm uppercase tracking-tight text-center leading-tight truncate w-full" title={dayClosures[0].reason}>
+                  🛑 Property Closed
+                </span>
+              ) : (
+                dayClosures.map(c => (
+                  <span key={c.id} className="text-[8px] bg-amber-50 border border-amber-200 text-amber-800 font-bold px-1 rounded-sm text-center leading-tight truncate w-full" title={`${c.hallId} Closed: ${c.reason}`}>
+                    🔒 {c.hallId}
+                  </span>
+                ))
+              )}
+            </div>
+          </div>
+        );
+      }
+      return <span>{cellInfo.dayNumberText}</span>;
+    }
 
     const dayEvents = events.filter(e => {
       if (!e.start || e.status === 'Cancelled') return false;
@@ -859,14 +919,34 @@ export default function HallCalendar({ events, onUpdateBooking }: { events: any[
           {cellInfo.dayNumberText}
         </span>
         {viewMode === 'capacity' && (
-          <div className={`mt-1.5 text-[9px] py-1 px-1.5 rounded-lg w-[92%] text-center truncate ${statusClass}`}>
-            {dayEvents.length > 0 ? (
-              <div className="flex flex-col gap-0.5 leading-none">
-                <span className="font-bold">{totalPax} Pax</span>
-                <span className="text-[8px] opacity-90">({Math.round(capacityPercentage)}%)</span>
+          <div className="mt-1 w-full flex flex-col items-center gap-0.5">
+            {dayClosures.length > 0 && (
+              <div className="w-[92%] flex flex-col gap-0.5">
+                {isGloballyClosed ? (
+                  <span className="text-[8px] bg-red-600 text-white font-extrabold py-0.5 px-1 rounded-sm text-center uppercase truncate leading-none" title={dayClosures[0].reason}>
+                    🛑 BLOCKED
+                  </span>
+                ) : (
+                  dayClosures.map(c => (
+                    <span key={c.id} className="text-[7.5px] bg-amber-500 text-amber-950 font-black py-0.5 px-1 rounded-sm text-center truncate leading-none" title={`${c.hallId}: ${c.reason}`}>
+                      🔒 {c.hallId.slice(0, 8)}
+                    </span>
+                  ))
+                )}
               </div>
-            ) : (
-              <span className="text-[8px] font-black uppercase opacity-70">VACANT</span>
+            )}
+            
+            {(!isGloballyClosed) && (
+              <div className={`text-[9px] py-1 px-1.5 rounded-lg w-[92%] text-center truncate ${statusClass}`}>
+                {dayEvents.length > 0 ? (
+                  <div className="flex flex-col gap-0.5 leading-none">
+                    <span className="font-bold">{totalPax} Pax</span>
+                    <span className="text-[8px] opacity-90">({Math.round(capacityPercentage)}%)</span>
+                  </div>
+                ) : (
+                  <span className="text-[8px] font-black uppercase opacity-70">VACANT</span>
+                )}
+              </div>
             )}
           </div>
         )}

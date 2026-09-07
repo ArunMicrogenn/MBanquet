@@ -20,7 +20,8 @@ import {
   Sparkles,
   ChevronRight,
   X,
-  FileText
+  FileText,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import RolesPermissions from './RolesPermissions';
 
@@ -144,18 +145,27 @@ export const initialProperties: Property[] = [
   }
 ];
 
+import { DateClosure } from '../App';
+
 interface PropertyConfigurationProps {
   currentActivePropertyId?: string;
   onSelectActiveProperty?: (propId: string, propName: string) => void;
+  dateClosures?: DateClosure[];
+  onAddClosure?: (newClosure: DateClosure) => Promise<boolean>;
+  onDeleteClosure?: (id: string) => Promise<void>;
 }
 
 export default function PropertyConfiguration({
   currentActivePropertyId = 'prop-1',
-  onSelectActiveProperty
+  onSelectActiveProperty,
+  dateClosures = [],
+  onAddClosure,
+  onDeleteClosure
 }: PropertyConfigurationProps) {
   const [properties, setProperties] = useState<Property[]>(initialProperties);
   const [activePropertyId, setActivePropertyId] = useState<string>(currentActivePropertyId);
-  const [mainTab, setMainTab] = useState<'chain' | 'details' | 'seating' | 'roles'>('chain');
+  const [mainTab, setMainTab] = useState<'chain' | 'details' | 'seating' | 'roles' | 'closures'>('chain');
+  const [customHallActive, setCustomHallActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Under Maintenance'>('All');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -399,6 +409,16 @@ export default function PropertyConfiguration({
           }`}
         >
           <Shield size={14} /> Multi-Property Roles & Permissions
+        </button>
+        <button
+          onClick={() => setMainTab('closures')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            mainTab === 'closures'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <CalendarIcon size={14} /> Date Closures & Blockouts
         </button>
       </div>
 
@@ -931,6 +951,194 @@ export default function PropertyConfiguration({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {mainTab === 'closures' && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs">
+            <h2 className="text-base font-extrabold text-slate-900 tracking-tight mb-1">Manage Date Closures & Blockouts</h2>
+            <p className="text-xs text-slate-500 font-medium">Prevent bookings and mark halls as unavailable on specific dates for maintenance, holidays, or private property reserve periods.</p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Create Closure Form */}
+            <div className="lg:col-span-1 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs h-fit space-y-4">
+              <div className="border-b border-slate-100 pb-3 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+                <h3 className="text-sm font-extrabold text-slate-900">Add Date Closure</h3>
+              </div>
+              
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const target = e.target as any;
+                const dateVal = target.startDate.value;
+                const endDateVal = target.endDate.value || dateVal;
+                const reasonVal = target.reason.value;
+                const hallVal = target.hallSelect.value === 'custom' ? target.customHall.value : target.hallSelect.value;
+                
+                if (!dateVal || !reasonVal || !hallVal) {
+                  alert("Please fill in all required fields.");
+                  return;
+                }
+
+                const newClosure = {
+                  id: 'closure-' + Date.now().toString() + '-' + Math.floor(Math.random() * 1000),
+                  date: dateVal,
+                  endDate: endDateVal,
+                  reason: reasonVal,
+                  hallId: hallVal,
+                  propertyId: activePropertyId,
+                  closedBy: 'System Administrator',
+                  createdAt: new Date().toISOString()
+                };
+
+                onAddClosure?.(newClosure);
+                target.reset();
+                setCustomHallActive(false);
+              }} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Start Date *</label>
+                  <input
+                    type="date"
+                    name="startDate"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-slate-900 outline-none text-slate-800"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">End Date (Optional for Range)</label>
+                  <input
+                    type="date"
+                    name="endDate"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-slate-900 outline-none text-slate-800"
+                  />
+                  <span className="text-[9px] text-slate-400 font-medium block mt-1">Leave blank for a single-day closure</span>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Target Venue *</label>
+                  <select
+                    name="hallSelect"
+                    onChange={(e) => setCustomHallActive(e.target.value === 'custom')}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-slate-900 outline-none text-slate-800 bg-white"
+                    required
+                  >
+                    <option value="all">Entire Property (All Halls)</option>
+                    <option value="Crystal Ballroom">Crystal Ballroom</option>
+                    <option value="Ruby Suite">Ruby Suite</option>
+                    <option value="Emerald Palms Lawn">Emerald Palms Lawn</option>
+                    <option value="Imperial Suite">Imperial Suite</option>
+                    <option value="custom">-- Custom Hall Name --</option>
+                  </select>
+                </div>
+
+                {customHallActive && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Custom Hall Name *</label>
+                    <input
+                      type="text"
+                      name="customHall"
+                      placeholder="e.g. Diamond Pavilion"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-slate-900 outline-none text-slate-800"
+                      required={customHallActive}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Closure Reason *</label>
+                  <input
+                    type="text"
+                    name="reason"
+                    placeholder="e.g. Annual HVAC Maintenance, National Holiday"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-slate-900 outline-none text-slate-800"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-all shadow-2xs flex items-center justify-center gap-1.5"
+                >
+                  <Plus size={14} /> Blockout Date/Range
+                </button>
+              </form>
+            </div>
+
+            {/* List of Closures */}
+            <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+                <h3 className="text-sm font-extrabold text-slate-900">Current Closures & Blackouts ({dateClosures.length})</h3>
+                <span className="text-[10px] text-slate-400 font-bold bg-slate-100 px-2 py-0.5 rounded-full uppercase">Live Sync Active</span>
+              </div>
+
+              {dateClosures.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <span className="text-2xl mb-2">🗓️</span>
+                  <p className="text-xs font-bold text-slate-700">No date closures defined</p>
+                  <p className="text-[10px] text-slate-400 mt-1">All dates are currently open for booking.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-[10px] font-bold uppercase text-slate-400">
+                        <th className="py-2.5 px-3">Date / Range</th>
+                        <th className="py-2.5 px-3">Blocked Venue</th>
+                        <th className="py-2.5 px-3">Reason</th>
+                        <th className="py-2.5 px-3">Created By</th>
+                        <th className="py-2.5 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50 font-medium">
+                      {dateClosures.map((closure) => (
+                        <tr key={closure.id} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="py-3 px-3">
+                            {closure.date === closure.endDate || !closure.endDate ? (
+                              <span className="text-slate-800 font-bold">{closure.date}</span>
+                            ) : (
+                              <div className="flex flex-col text-slate-800">
+                                <span className="font-bold">{closure.date}</span>
+                                <span className="text-[10px] text-slate-400">to {closure.endDate}</span>
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-3">
+                            {closure.hallId === 'all' ? (
+                              <span className="bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase">
+                                Full Property
+                              </span>
+                            ) : (
+                              <span className="bg-amber-50 text-amber-800 border border-amber-100 px-2 py-0.5 rounded-lg text-[10px] font-bold">
+                                {closure.hallId}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-slate-600 font-semibold italic">
+                            "{closure.reason}"
+                          </td>
+                          <td className="py-3 px-3 text-slate-500 font-semibold">
+                            {closure.closedBy}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <button
+                              onClick={() => onDeleteClosure?.(closure.id)}
+                              className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg transition-colors"
+                              title="Delete closure"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
