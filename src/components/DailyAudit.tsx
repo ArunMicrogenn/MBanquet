@@ -57,6 +57,14 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [history, setHistory] = useState<AuditRecord[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    cancelText?: string;
+  } | null>(null);
 
   // Default checklist items
   const [checklist, setChecklist] = useState<Record<string, boolean>>({
@@ -230,18 +238,9 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
     return actualCash - todayMetrics.expectedCash;
   }, [actualCash, todayMetrics.expectedCash]);
 
-  // Submitting / Freezing daily audit
-  const handleFreezeAudit = async () => {
+  const executeFreezeAudit = async () => {
     setIsSubmitting(true);
     try {
-      const isAllChecked = Object.values(checklist).every(v => v === true);
-      if (!isAllChecked) {
-        if (!window.confirm("Some operational checklist items are incomplete. Do you still want to proceed and finalize this audit?")) {
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
       const auditRecord: AuditRecord = {
         id: selectedDate,
         date: selectedDate,
@@ -300,17 +299,27 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
     }
   };
 
-  // Voiding / Unlocking daily audit (Admins only)
-  const handleUnlockAudit = async () => {
-    if (userRole !== 'Admin' && userRole !== 'Property Owner') {
-      onToast("Permission Denied: Only Admins can unlock frozen audits.", "error");
-      return;
+  // Submitting / Freezing daily audit
+  const handleFreezeAudit = async () => {
+    const isAllChecked = Object.values(checklist).every(v => v === true);
+    if (!isAllChecked) {
+      setConfirmModal({
+        isOpen: true,
+        title: "Incomplete Checklist Warning",
+        message: "Some operational checklist items are incomplete. Do you still want to proceed and finalize this daily audit? Today's transaction and operations logs will be frozen.",
+        confirmText: "Yes, Finalize Anyway",
+        cancelText: "No, Go Back",
+        onConfirm: () => {
+          setConfirmModal(null);
+          executeFreezeAudit();
+        }
+      });
+    } else {
+      executeFreezeAudit();
     }
+  };
 
-    if (!window.confirm(`Are you sure you want to UNLOCK the audit for ${selectedDate}? This will allow changes to be made.`)) {
-      return;
-    }
-
+  const executeUnlockAudit = async () => {
     setIsSubmitting(true);
     try {
       await deleteDoc(doc(db, 'daily_audits', selectedDate));
@@ -332,6 +341,26 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Voiding / Unlocking daily audit (Admins only)
+  const handleUnlockAudit = async () => {
+    if (userRole !== 'Admin' && userRole !== 'Property Owner') {
+      onToast("Permission Denied: Only Admins can unlock frozen audits.", "error");
+      return;
+    }
+
+    setConfirmModal({
+      isOpen: true,
+      title: "Unlock Daily Audit Log",
+      message: `Are you sure you want to UNLOCK the audit for ${selectedDate}? This will allow modifications and remove the secure freeze status.`,
+      confirmText: "Unlock Audit",
+      cancelText: "Keep Locked",
+      onConfirm: () => {
+        setConfirmModal(null);
+        executeUnlockAudit();
+      }
+    });
   };
 
   const handleToggleChecklist = (key: string) => {
@@ -689,6 +718,31 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
           </div>
         </div>
       </div>
+
+      {confirmModal && confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 border border-slate-200 shadow-xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="text-sm font-black text-slate-900">{confirmModal.title}</h3>
+            <p className="text-xs text-slate-500 font-medium leading-relaxed">{confirmModal.message}</p>
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl hover:bg-slate-50 transition-colors"
+              >
+                {confirmModal.cancelText || 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={confirmModal.onConfirm}
+                className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-slate-800 transition-colors"
+              >
+                {confirmModal.confirmText || 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

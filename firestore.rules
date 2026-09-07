@@ -33,8 +33,7 @@ service cloud.firestore {
 
     // Rules for daily_audits collection
     match /daily_audits/{id} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (getUserRole() == 'Admin' || getUserRole() == 'Manager' || getUserRole() == 'Property Owner' || getUserRole() == 'Banquet Manager');
+      allow read, write: if isAuthenticated();
     }
     
     // Default rule for everything else: Admins can do anything, others read-only for now
