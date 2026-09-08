@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, doc, getDocs, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import DailyReconciliationSummary from './DailyReconciliationSummary';
 
 export interface AuditRecord {
   id: string; // Date formatted YYYY-MM-DD
@@ -57,6 +58,7 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [history, setHistory] = useState<AuditRecord[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [expectedCashFromDb, setExpectedCashFromDb] = useState<number | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -234,9 +236,11 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
   }, [selectedDate, bookings]);
 
   // Cash variance calculations
+  const effectiveExpectedCash = expectedCashFromDb !== null ? expectedCashFromDb : todayMetrics.expectedCash;
+
   const cashVariance = useMemo(() => {
-    return actualCash - todayMetrics.expectedCash;
-  }, [actualCash, todayMetrics.expectedCash]);
+    return actualCash - effectiveExpectedCash;
+  }, [actualCash, effectiveExpectedCash]);
 
   const executeFreezeAudit = async () => {
     setIsSubmitting(true);
@@ -249,7 +253,7 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
         totalSettlements: todayMetrics.settlementsToday,
         totalRevenue: todayMetrics.totalRevenue,
         actualCash: actualCash,
-        expectedCash: todayMetrics.expectedCash,
+        expectedCash: effectiveExpectedCash,
         cashVariance: cashVariance,
         notes: notes,
         checklistState: checklist,
@@ -485,6 +489,13 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
             </div>
           </div>
 
+          {/* Daily Reconciliation Summary from cashier_transactions */}
+          <DailyReconciliationSummary 
+            selectedDate={selectedDate}
+            onUpdateExpectedCash={setExpectedCashFromDb}
+            onToast={onToast}
+          />
+
           {/* Cash Drawer Reconciliation */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
             <div className="border-b border-slate-100 pb-3">
@@ -497,7 +508,7 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">System Log Expected Cash</label>
                 <div className="px-3 py-2 border border-slate-200 bg-slate-50 rounded-xl font-bold text-slate-800 text-sm">
-                  ₹{todayMetrics.expectedCash.toLocaleString('en-IN')}
+                  ₹{effectiveExpectedCash.toLocaleString('en-IN')}
                 </div>
               </div>
 
