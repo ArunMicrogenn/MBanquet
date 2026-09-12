@@ -233,7 +233,7 @@ export default function DailyReconciliationSummary({
           type="button"
           onClick={handleSync}
           disabled={isSyncing || isLoading}
-          className="p-1.5 hover:bg-slate-50 border border-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center"
+          className="print-hide p-1.5 hover:bg-slate-50 border border-slate-200 rounded-lg text-slate-500 hover:text-slate-800 transition-colors flex items-center justify-center"
           title="Resync Transaction Records"
         >
           {isSyncing ? (

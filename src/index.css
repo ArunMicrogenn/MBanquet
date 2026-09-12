@@ -76,3 +76,24 @@
   border-width: 5px !important;
 }
 
+@media print {
+  aside, header {
+    display: none !important;
+  }
+  
+  html, body, #root, main, .overflow-hidden, .overflow-auto, .flex-1 {
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+  
+  .print-hide {
+    display: none !important;
+  }
+
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+

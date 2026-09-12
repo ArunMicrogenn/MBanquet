@@ -390,13 +390,21 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
 
         {/* Audit Status Badge / Date Selector */}
         <div className="flex flex-wrap items-center gap-3">
+          <button 
+            onClick={() => window.print()}
+            className="print-hide flex flex-col items-center justify-center px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 rounded-xl text-slate-700 transition-colors cursor-pointer"
+            title="Print Audit Report"
+          >
+            <Printer size={16} className="text-slate-500 mb-0.5" />
+            <span className="text-[9px] font-bold uppercase">Print</span>
+          </button>
           <div className="flex flex-col">
             <span className="text-[10px] font-bold text-slate-400 uppercase">Audit Date</span>
             <input 
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-3 py-1.5 border border-slate-200 bg-slate-50 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-slate-900"
+              className="px-3 py-1.5 border border-slate-200 bg-slate-50 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-slate-900 print:appearance-none print:bg-white print:border-none print:px-0"
             />
           </div>
 
@@ -580,7 +588,7 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="print-hide flex items-center gap-2 w-full sm:w-auto">
                 {currentAudit?.isFrozen ? (
                   <>
                     <button
@@ -678,7 +686,7 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
           </div>
 
           {/* Audit History Logs */}
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+          <div className="print-hide bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
             <div className="border-b border-slate-100 pb-2">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
                 <History size={16} className="text-slate-500" /> Historic Audit Logs
