@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, CheckCircle, Circle, Trash2, User } from 'lucide-react';
 import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { safeStorage } from '../lib/storage';
 
 interface Task {
   id: string;
@@ -30,8 +31,12 @@ const mockTasks: Task[] = [
 
 export default function TaskBoard() {
   const [tasks, setTasks] = useState<Task[]>(() => {
-    const local = localStorage.getItem('banquet_tasks');
-    return local ? JSON.parse(local) : mockTasks;
+    try {
+      const local = safeStorage.getItem('banquet_tasks');
+      return local ? JSON.parse(local) : mockTasks;
+    } catch {
+      return mockTasks;
+    }
   });
   const [staff, setStaff] = useState<string[]>(DEFAULT_STAFF_NAMES);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -90,9 +95,13 @@ export default function TaskBoard() {
     fetchTasks();
   }, []);
 
-  // Keep localStorage in sync
+  // Keep safeStorage in sync
   useEffect(() => {
-    localStorage.setItem('banquet_tasks', JSON.stringify(tasks));
+    try {
+      safeStorage.setItem('banquet_tasks', JSON.stringify(tasks));
+    } catch {
+      // Ignore
+    }
   }, [tasks]);
 
   const handleToggleStatus = async (id: string) => {

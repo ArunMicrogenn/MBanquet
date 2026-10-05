@@ -462,7 +462,9 @@ export default function HallInsights({ bookings = [] }: { bookings?: any[] }) {
             <div>
               <label className="block text-[10px] font-extrabold text-slate-600 uppercase mb-1.5 tracking-wider flex items-center gap-1">
                 Projection Curve Model
-                <HelpCircle size={11} className="text-slate-400" title="Select forecasting curve model" />
+                <span title="Select forecasting curve model">
+                  <HelpCircle size={11} className="text-slate-400" />
+                </span>
               </label>
               <div className="grid grid-cols-1 gap-1">
                 <button

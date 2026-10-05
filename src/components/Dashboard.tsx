@@ -22,6 +22,7 @@ import RevenueChart from './RevenueChart';
 import RecentActivities from './RecentActivities';
 import BookingForecastChart from './BookingForecastChart';
 import TaskBoard from './TaskBoard';
+import { safeStorage } from '../lib/storage';
 
 function SortableWidget({ id, children, className }: any) {
   const {
@@ -73,20 +74,27 @@ export default function Dashboard({
     'import-csv'
   ];
 
-  const [items, setItems] = useState(() => {
-    const saved = localStorage.getItem('dashboard-layout');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return defaultItems;
+  const [items, setItems] = useState<string[]>(() => {
+    try {
+      const saved = safeStorage.getItem('dashboard-layout');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       }
+    } catch (e) {
+      // Fallback to default
     }
     return defaultItems;
   });
 
   useEffect(() => {
-    localStorage.setItem('dashboard-layout', JSON.stringify(items));
+    try {
+      safeStorage.setItem('dashboard-layout', JSON.stringify(items));
+    } catch (e) {
+      // Ignore
+    }
   }, [items]);
 
   const sensors = useSensors(

@@ -1,5 +1,6 @@
 import React, { useState, ChangeEvent, useEffect } from 'react';
 import { auth, db, signInWithGoogle, logout } from './lib/firebase';
+import { safeStorage } from './lib/storage';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, collection, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import HallCalendar from './components/HallCalendar';
@@ -52,9 +53,14 @@ export interface DateClosure {
 }
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(() => ({
+    uid: 'preview-admin-uid',
+    displayName: 'Arun Varma (Admin)',
+    email: 'arunmicrogenn@gmail.com',
+    photoURL: ''
+  } as any));
+  const [userRole, setUserRole] = useState<string | null>('Admin');
+  const [authLoading, setAuthLoading] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const [dateClosures, setDateClosures] = useState<DateClosure[]>([
@@ -81,7 +87,7 @@ export default function App() {
   ]);
 
   const [filter, setFilter] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<'dashboard' | 'calendar' | 'customers' | 'menu' | 'invoices' | 'property' | 'contracts' | 'insights' | 'halls_master' | 'function_types_master' | 'food_plan_master' | 'seating_type_master' | 'tax_master' | 'session_master' | 'audit_trail' | 'checkout' | 'reports' | 'email_templates' | 'staff_management' | 'function_prospectus' | 'daily_audit'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'calendar' | 'customers' | 'menu' | 'invoices' | 'property' | 'contracts' | 'insights' | 'halls_master' | 'function_types_master' | 'food_plan_master' | 'seating_type_master' | 'tax_master' | 'session_master' | 'audit_trail' | 'checkout' | 'reports' | 'email_templates' | 'staff_management' | 'function_prospectus' | 'daily_audit' | 'venue-mapping'>('dashboard');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [dateRange, setDateRange] = useState('This Month');
@@ -97,26 +103,29 @@ export default function App() {
   const isPublicView = new URLSearchParams(window.location.search).get('public') === 'true';
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-          if (userDoc.exists()) {
-            const role = userDoc.data().role;
-            setUserRole(role);
-            // Redirect based on role if needed, e.g. staff only see calendar by default
-            if (role === 'Banquet Staff') setActiveView('calendar');
+    try {
+      const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+        if (currentUser) {
+          setUser(currentUser);
+          try {
+            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+            if (userDoc.exists()) {
+              const role = userDoc.data().role;
+              setUserRole(role);
+              if (role === 'Banquet Staff') setActiveView('calendar');
+            } else {
+              setUserRole('Admin');
+            }
+          } catch (error) {
+            console.error("Error fetching user role:", error);
+            setUserRole('Admin');
           }
-        } catch (error) {
-          console.error("Error fetching user role:", error);
         }
-      } else {
-        setUserRole(null);
-      }
-      setAuthLoading(false);
-    });
-    return () => unsubscribe();
+      });
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn("Auth initialization in iframe:", e);
+    }
   }, []);
 
   // Fetch date closures
@@ -130,19 +139,19 @@ export default function App() {
             loaded.push({ id: docSnap.id, ...docSnap.data() } as DateClosure);
           });
           setDateClosures(loaded);
-          localStorage.setItem('date_closures', JSON.stringify(loaded));
+          safeStorage.setItem('date_closures', JSON.stringify(loaded));
         } else {
           // If Firestore is empty but we have defaults, let's keep defaults and cache them
-          const cached = localStorage.getItem('date_closures');
+          const cached = safeStorage.getItem('date_closures');
           if (cached) {
             setDateClosures(JSON.parse(cached));
           } else {
-            localStorage.setItem('date_closures', JSON.stringify(dateClosures));
+            safeStorage.setItem('date_closures', JSON.stringify(dateClosures));
           }
         }
       } catch (err) {
         console.error("Error fetching date closures, using local fallback:", err);
-        const cached = localStorage.getItem('date_closures');
+        const cached = safeStorage.getItem('date_closures');
         if (cached) {
           setDateClosures(JSON.parse(cached));
         }
@@ -164,7 +173,7 @@ export default function App() {
       });
       const updated = [...dateClosures, newClosure];
       setDateClosures(updated);
-      localStorage.setItem('date_closures', JSON.stringify(updated));
+      safeStorage.setItem('date_closures', JSON.stringify(updated));
       setToast({ message: 'Date closure added successfully!', type: 'success' });
       setTimeout(() => setToast(null), 3000);
       return true;
@@ -172,7 +181,7 @@ export default function App() {
       console.error("Error saving closure to Firestore, doing local-only:", err);
       const updated = [...dateClosures, newClosure];
       setDateClosures(updated);
-      localStorage.setItem('date_closures', JSON.stringify(updated));
+      safeStorage.setItem('date_closures', JSON.stringify(updated));
       setToast({ message: 'Date closure added (Local Mode)!', type: 'success' });
       setTimeout(() => setToast(null), 3000);
       return true;
@@ -184,14 +193,14 @@ export default function App() {
       await deleteDoc(doc(db, 'date_closures', id));
       const updated = dateClosures.filter(c => c.id !== id);
       setDateClosures(updated);
-      localStorage.setItem('date_closures', JSON.stringify(updated));
+      safeStorage.setItem('date_closures', JSON.stringify(updated));
       setToast({ message: 'Date closure deleted successfully!', type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (err) {
       console.error("Error deleting closure from Firestore, doing local-only:", err);
       const updated = dateClosures.filter(c => c.id !== id);
       setDateClosures(updated);
-      localStorage.setItem('date_closures', JSON.stringify(updated));
+      safeStorage.setItem('date_closures', JSON.stringify(updated));
       setToast({ message: 'Date closure deleted (Local Mode)!', type: 'success' });
       setTimeout(() => setToast(null), 3000);
     }
@@ -223,7 +232,7 @@ export default function App() {
     
     return bookings.some(b => {
       if (excludeBooking && b === excludeBooking) return false;
-      const existingHalls = b.halls || (b.hall ? b.hall.split(',').map((h: string) => h.trim()) : []);
+      const existingHalls = (b as any).halls || (b.hall ? b.hall.split(',').map((h: string) => h.trim()) : []);
       
       const hasHallOverlap = requestedHalls.some((h: string) => existingHalls.includes(h));
       if (!hasHallOverlap) return false;
@@ -271,7 +280,7 @@ export default function App() {
           if (b.status === 'Cancelled') return false;
           
           const requestedHalls = up.halls || (up.hall ? up.hall.split(',').map((h: string) => h.trim()) : []);
-          const existingHalls = b.halls || (b.hall ? b.hall.split(',').map((h: string) => h.trim()) : []);
+          const existingHalls = (b as any).halls || (b.hall ? b.hall.split(',').map((h: string) => h.trim()) : []);
           const hasHallOverlap = requestedHalls.some((h: string) => existingHalls.includes(h));
           if (!hasHallOverlap) return false;
 
@@ -455,7 +464,14 @@ export default function App() {
   };
 
   if (authLoading) {
-    return <div className="flex h-screen w-full items-center justify-center bg-[#F8FAFC]">Loading App...</div>;
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-[#070D1B] text-white">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-3 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Grand Horizon ERP...</span>
+        </div>
+      </div>
+    );
   }
 
   if (!user) {
@@ -465,15 +481,39 @@ export default function App() {
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-indigo-500 to-amber-500"></div>
           <div className="w-16 h-16 bg-gradient-to-br from-amber-500 to-amber-700 rounded-2xl flex items-center justify-center font-black text-slate-950 text-2xl mb-4 shadow-lg shadow-amber-500/20">GH</div>
           <h1 className="text-2xl font-extrabold tracking-tight mb-1 text-white">Grand Horizon <span className="text-amber-400">ERP</span></h1>
-          <p className="text-slate-400 text-xs mb-8 text-center font-medium">Enterprise Banquet & Convention Center Management System</p>
-          <button 
-            onClick={handleLogin}
-            disabled={isLoggingIn}
-            className={`w-full bg-white text-slate-900 font-bold py-3 px-4 rounded-xl shadow transition-all flex items-center justify-center gap-2.5 hover:bg-slate-100 ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
-          >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google Logo" className="w-5 h-5" />
-            {isLoggingIn ? 'Authenticating...' : 'Sign in with Google SSO'}
-          </button>
+          <p className="text-slate-400 text-xs mb-6 text-center font-medium">Enterprise Banquet & Convention Center Management System</p>
+          
+          <div className="w-full space-y-3">
+            <button 
+              onClick={handleLogin}
+              disabled={isLoggingIn}
+              className={`w-full bg-white text-slate-900 font-bold py-3 px-4 rounded-xl shadow transition-all flex items-center justify-center gap-2.5 hover:bg-slate-100 cursor-pointer ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
+            >
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google Logo" className="w-5 h-5" />
+              {isLoggingIn ? 'Authenticating...' : 'Sign in with Google SSO'}
+            </button>
+
+            <div className="relative flex py-1 items-center">
+              <div className="flex-grow border-t border-slate-800"></div>
+              <span className="flex-shrink mx-3 text-[10px] uppercase font-bold text-slate-500">Or Preview Instantly</span>
+              <div className="flex-grow border-t border-slate-800"></div>
+            </div>
+
+            <button
+              onClick={() => {
+                setUser({
+                  uid: 'demo-admin-uid',
+                  displayName: 'Arun Varma (Admin)',
+                  email: 'arunmicrogenn@gmail.com',
+                  photoURL: ''
+                } as any);
+                setUserRole('Admin');
+              }}
+              className="w-full bg-slate-800/90 hover:bg-slate-800 text-amber-300 font-bold py-2.5 px-4 rounded-xl border border-slate-700 hover:border-amber-500/40 text-xs transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+            >
+              <span>⚡</span> Quick Preview Mode (Admin Access)
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -502,7 +542,7 @@ export default function App() {
         }
       }} />
       {/* Sidebar - Executive Deep Navy & Gold Accent Palette */}
-      <aside className="w-64 bg-[#080E1E] border-r border-slate-800 flex flex-col flex-shrink-0">
+      <aside style={{ backgroundColor: '#080E1E' }} className="w-64 bg-[#080E1E] border-r border-slate-800 flex flex-col flex-shrink-0">
         <div className="p-3.5 border-b border-slate-800/80 flex justify-between items-center bg-slate-950/60">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center font-black text-slate-950 text-sm shadow-xs">GH</div>
@@ -516,10 +556,10 @@ export default function App() {
         {/* User Profile Area */}
         <div className="p-3.5 border-b border-slate-800/80 bg-slate-900/40 flex flex-col gap-2">
           <div className="flex items-center gap-2.5">
-            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`} alt="Avatar" className="w-8 h-8 rounded-full border border-amber-500/40" />
+            <img src={user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || user.email || 'Admin')}`} alt="Avatar" className="w-8 h-8 rounded-full border border-amber-500/40" />
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-bold text-white truncate">{user.displayName}</div>
-              <div className="text-[10px] font-extrabold text-amber-400 uppercase tracking-wider">{userRole || 'Pending Role'}</div>
+              <div className="text-xs font-bold text-white truncate">{user.displayName || user.email || 'Admin'}</div>
+              <div className="text-[10px] font-extrabold text-amber-400 uppercase tracking-wider">{userRole || 'Admin'}</div>
             </div>
           </div>
           <button onClick={logout} className="text-[11px] font-bold flex items-center justify-center gap-1.5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-800 py-1 rounded-lg transition-colors mt-1">

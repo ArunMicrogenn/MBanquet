@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Plus, Trash2, Maximize, Save, Users, Calendar, Copy, RotateCcw, Sparkles, Check, Info, FileText } from 'lucide-react';
 import { collection, getDocs, doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { safeStorage } from '../lib/storage';
 
 interface Table {
   id: string;
@@ -47,7 +48,7 @@ export default function VenueMapping({ seatingTypes, bookings }: Props) {
     }
   }, [statusMessage]);
 
-  // Load Master Layout Templates from Firestore & localStorage fallback
+  // Load Master Layout Templates from Firestore & safeStorage fallback
   const loadTemplates = async () => {
     try {
       const snap = await getDocs(collection(db, 'venue_layout_templates'));
@@ -56,8 +57,8 @@ export default function VenueMapping({ seatingTypes, bookings }: Props) {
         list.push({ id: docSnap.id, ...docSnap.data() } as MasterTemplate);
       });
       
-      // Merge with localStorage templates to be fully safe
-      const local = localStorage.getItem('venue_layout_templates');
+      // Merge with safeStorage templates to be fully safe
+      const local = safeStorage.getItem('venue_layout_templates');
       const localList: MasterTemplate[] = local ? JSON.parse(local) : [];
       
       const mergedMap = new Map<string, MasterTemplate>();
@@ -66,10 +67,10 @@ export default function VenueMapping({ seatingTypes, bookings }: Props) {
       
       const finalTemplates = Array.from(mergedMap.values());
       setMasterTemplates(finalTemplates);
-      localStorage.setItem('venue_layout_templates', JSON.stringify(finalTemplates));
+      safeStorage.setItem('venue_layout_templates', JSON.stringify(finalTemplates));
     } catch (error) {
-      console.warn("Firestore template load failed, reading from localStorage fallback:", error);
-      const local = localStorage.getItem('venue_layout_templates');
+      console.warn("Firestore template load failed, reading from safeStorage fallback:", error);
+      const local = safeStorage.getItem('venue_layout_templates');
       if (local) {
         setMasterTemplates(JSON.parse(local));
       }
@@ -99,11 +100,11 @@ export default function VenueMapping({ seatingTypes, bookings }: Props) {
               return;
             }
           } catch (err) {
-            console.warn("Firestore booking layout fetch failed, checking localStorage fallback");
+            console.warn("Firestore booking layout fetch failed, checking safeStorage fallback");
           }
 
-          // Fallback to localStorage
-          const localLayout = localStorage.getItem(`venue_layout_booking_${selectedBooking}`);
+          // Fallback to safeStorage
+          const localLayout = safeStorage.getItem(`venue_layout_booking_${selectedBooking}`);
           if (localLayout) {
             const parsed = JSON.parse(localLayout);
             if (parsed.tables) setTables(parsed.tables);
@@ -182,13 +183,13 @@ export default function VenueMapping({ seatingTypes, bookings }: Props) {
     try {
       // Persist to Cloud Firestore
       await setDoc(doc(db, 'booking_layouts', selectedBooking), layoutData);
-      // Persist to localStorage
-      localStorage.setItem(`venue_layout_booking_${selectedBooking}`, JSON.stringify(layoutData));
+      // Persist to safeStorage
+      safeStorage.setItem(`venue_layout_booking_${selectedBooking}`, JSON.stringify(layoutData));
       
       setStatusMessage({ text: "Success! Booking layout saved and synced to the cloud.", type: 'success' });
     } catch (error) {
-      console.warn("Firestore sync failed, saving to localStorage only:", error);
-      localStorage.setItem(`venue_layout_booking_${selectedBooking}`, JSON.stringify(layoutData));
+      console.warn("Firestore sync failed, saving to safeStorage only:", error);
+      safeStorage.setItem(`venue_layout_booking_${selectedBooking}`, JSON.stringify(layoutData));
       setStatusMessage({ text: "Saved layout locally (offline fallback mode active).", type: 'success' });
     } finally {
       setIsSaving(false);
@@ -223,7 +224,7 @@ export default function VenueMapping({ seatingTypes, bookings }: Props) {
       
       const updatedList = [newTemplate, ...masterTemplates];
       setMasterTemplates(updatedList);
-      localStorage.setItem('venue_layout_templates', JSON.stringify(updatedList));
+      safeStorage.setItem('venue_layout_templates', JSON.stringify(updatedList));
       
       setNewTemplateName('');
       setStatusMessage({ text: `Master layout template "${newTemplate.name}" created!`, type: 'success' });
@@ -231,7 +232,7 @@ export default function VenueMapping({ seatingTypes, bookings }: Props) {
       console.warn("Firestore template creation failed, saving locally:", error);
       const updatedList = [newTemplate, ...masterTemplates];
       setMasterTemplates(updatedList);
-      localStorage.setItem('venue_layout_templates', JSON.stringify(updatedList));
+      safeStorage.setItem('venue_layout_templates', JSON.stringify(updatedList));
       setNewTemplateName('');
       setStatusMessage({ text: `Created local template "${newTemplate.name}" (Offline).`, type: 'success' });
     } finally {
@@ -259,7 +260,7 @@ export default function VenueMapping({ seatingTypes, bookings }: Props) {
 
     const updated = masterTemplates.filter(t => t.id !== templateId);
     setMasterTemplates(updated);
-    localStorage.setItem('venue_layout_templates', JSON.stringify(updated));
+    safeStorage.setItem('venue_layout_templates', JSON.stringify(updated));
     setStatusMessage({ text: `Template "${name}" deleted.`, type: 'info' });
   };
 

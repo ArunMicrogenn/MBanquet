@@ -5,15 +5,98 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Banquet Hall Management System</title>
     <meta name="description" content="A cloud-based, multi-tenant SaaS platform for banquet hall inventory, booking, billing, and event operations." />
-    <link rel="manifest" href="/manifest.json" />
     <meta property="og:title" content="Banquet Hall Management System" />
-    <meta property="og:description" content="An application built with Google AI Studio." />
+    <meta property="og:description" content="A cloud-based, multi-tenant SaaS platform for banquet hall inventory, booking, billing, and event operations." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <script>
+      // Safe in-memory polyfill for storage in sandboxed or cross-origin iframe environments
+      (function() {
+        var createMemoryStorage = function() {
+          var store = {};
+          return {
+            getItem: function(key) { return store.hasOwnProperty(key) ? store[key] : null; },
+            setItem: function(key, val) { store[key] = String(val); },
+            removeItem: function(key) { delete store[key]; },
+            clear: function() { store = {}; },
+            key: function(i) { return Object.keys(store)[i] || null; },
+            get length() { return Object.keys(store).length; }
+          };
+        };
+
+        try {
+          var test = '__t_ls_check__';
+          window.localStorage.setItem(test, test);
+          window.localStorage.removeItem(test);
+        } catch (e) {
+          try {
+            Object.defineProperty(window, 'localStorage', {
+              value: createMemoryStorage(),
+              configurable: true,
+              enumerable: true,
+              writable: true
+            });
+          } catch (ex) {}
+        }
+
+        try {
+          var testS = '__t_ss_check__';
+          window.sessionStorage.setItem(testS, testS);
+          window.sessionStorage.removeItem(testS);
+        } catch (e) {
+          try {
+            Object.defineProperty(window, 'sessionStorage', {
+              value: createMemoryStorage(),
+              configurable: true,
+              enumerable: true,
+              writable: true
+            });
+          } catch (ex) {}
+        }
+      })();
+
+      // Diagnostic error catcher that notifies user if module fails to load
+      window.addEventListener('error', function(e) {
+        console.error('Window error:', e.message, e.filename, e.lineno);
+        var fallback = document.getElementById('app-loading-error');
+        if (fallback) {
+          fallback.style.display = 'block';
+          var desc = document.getElementById('app-loading-error-desc');
+          if (desc && e.message) desc.textContent = e.message;
+        }
+      });
+    </script>
   </head>
-  <body>
-    <div id="root"></div>
+  <body class="bg-[#070D1B] min-h-screen text-slate-100 antialiased">
+    <div id="root" class="min-h-screen w-full">
+      <!-- Instant loader so iframe never shows a blank white page while bundles download -->
+      <div style="display:flex;min-height:100vh;width:100%;align-items:center;justify-content:center;background:#070D1B;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;padding:1.5rem;">
+        <div style="max-width:380px;width:100%;display:flex;flex-direction:column;align-items:center;text-align:center;">
+          <div style="width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg, #f59e0b, #b45309);display:flex;align-items:center;justify-content:center;font-weight:900;color:#020617;font-size:22px;margin-bottom:18px;box-shadow:0 10px 25px rgba(245,158,11,0.25);">
+            GH
+          </div>
+          <h1 style="font-size:18px;font-weight:800;letter-spacing:-0.02em;margin:0 0 6px 0;color:#ffffff;">
+            Grand Horizon <span style="color:#fbbf24;">ERP</span>
+          </h1>
+          <p style="font-size:12px;color:#94a3b8;margin:0 0 24px 0;font-weight:500;">
+            Banquet & Convention Center Management
+          </p>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);border-radius:9999px;">
+            <div style="width:14px;height:14px;border:2px solid #fbbf24;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+            <span style="font-size:11px;font-weight:600;color:#cbd5e1;letter-spacing:0.02em;">Initializing workspace...</span>
+          </div>
+          <div id="app-loading-error" style="display:none;margin-top:20px;padding:12px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:10px;text-align:left;width:100%;">
+            <p style="font-size:11px;color:#f87171;font-weight:700;margin:0 0 4px 0;">Error initializing view</p>
+            <p id="app-loading-error-desc" style="font-size:10px;color:#cbd5e1;margin:0 0 8px 0;font-family:monospace;"></p>
+            <button onclick="window.location.reload()" style="background:#ef4444;color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;">Reload</button>
+          </div>
+        </div>
+      </div>
+      <style>
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+      </style>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
