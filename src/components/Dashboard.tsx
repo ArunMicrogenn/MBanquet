@@ -80,7 +80,9 @@ export default function Dashboard({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          const validSet = new Set(defaultItems);
+          const validList = parsed.filter((id: string) => validSet.has(id));
+          if (validList.length >= 4) return validList;
         }
       }
     } catch (e) {
@@ -227,7 +229,7 @@ export default function Dashboard({
         items={items}
         strategy={rectSortingStrategy}
       >
-        <div className="grid grid-cols-4 grid-auto-rows gap-2 auto-rows-max h-full p-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 auto-rows-max h-full p-2">
           {items.map(id => (
             <React.Fragment key={id}>
               {renderWidget(id)}

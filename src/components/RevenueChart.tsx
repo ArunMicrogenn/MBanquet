@@ -9,7 +9,7 @@ export default function RevenueChart({ dateRange, property }: { dateRange: strin
   return (
     <div className="h-full w-full bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex flex-col">
       <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Revenue Trend ({dateRange} | {property})</h2>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minHeight={200}>
         <LineChart data={data}>
           <XAxis dataKey="date" hide />
           <YAxis hide />

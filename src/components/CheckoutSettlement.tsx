@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { safeStorage } from '../lib/storage';
 import { 
   Printer, 
   CheckCircle2, 
@@ -313,7 +314,7 @@ export default function CheckoutSettlement() {
   // Customizer Settings State with localStorage persistence
   const [customizerSettings, setCustomizerSettings] = useState<PrintCustomizerSettings>(() => {
     try {
-      const saved = localStorage.getItem('banquet_print_customizer_settings');
+      const saved = safeStorage.getItem('banquet_print_customizer_settings');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -325,7 +326,7 @@ export default function CheckoutSettlement() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('banquet_print_customizer_settings', JSON.stringify(customizerSettings));
+      safeStorage.setItem('banquet_print_customizer_settings', JSON.stringify(customizerSettings));
     } catch (e) {
       console.error(e);
     }
@@ -390,7 +391,7 @@ export default function CheckoutSettlement() {
   // History and Printable Modal state
   const [settledHistory, setSettledHistory] = useState<SettledBill[]>(() => {
     try {
-      const saved = localStorage.getItem('banquet_settled_history');
+      const saved = safeStorage.getItem('banquet_settled_history');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error(e);
@@ -400,7 +401,7 @@ export default function CheckoutSettlement() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('banquet_settled_history', JSON.stringify(settledHistory));
+      safeStorage.setItem('banquet_settled_history', JSON.stringify(settledHistory));
     } catch (e) {
       console.error(e);
     }

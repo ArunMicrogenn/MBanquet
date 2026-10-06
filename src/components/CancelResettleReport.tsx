@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { safeStorage } from '../lib/storage';
 import { 
   XCircle, 
   RefreshCw, 
@@ -193,7 +194,7 @@ const defaultSettledHistory: SettledBill[] = [
 export default function CancelResettleReport() {
   const [bills, setBills] = useState<SettledBill[]>(() => {
     try {
-      const saved = localStorage.getItem('banquet_settled_history');
+      const saved = safeStorage.getItem('banquet_settled_history');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.error('Error loading history in report:', e);
@@ -203,7 +204,7 @@ export default function CancelResettleReport() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('banquet_settled_history', JSON.stringify(bills));
+      safeStorage.setItem('banquet_settled_history', JSON.stringify(bills));
     } catch (e) {
       console.error('Error saving history in report:', e);
     }

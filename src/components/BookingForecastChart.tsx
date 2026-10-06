@@ -11,7 +11,7 @@ export default function BookingForecastChart() {
   return (
     <div className="h-full w-full bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex flex-col">
       <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Booking Forecast</h2>
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" minHeight={200}>
         <BarChart data={data}>
           <XAxis dataKey="week" hide />
           <YAxis hide />

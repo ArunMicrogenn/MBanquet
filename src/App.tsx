@@ -34,7 +34,7 @@ import PublicLobbyView from './components/PublicLobbyView';
 import Dashboard from './components/Dashboard';
 import FunctionProspectus from './components/FunctionProspectus';
 import DailyAudit from './components/DailyAudit';
-import { QrCode, LogOut, Shield, ClipboardList, Building2 } from 'lucide-react';
+import { QrCode, LogOut, Shield, ClipboardList, Building2, Menu, X } from 'lucide-react';
 
 /**
  * @license
@@ -60,6 +60,7 @@ export default function App() {
     photoURL: ''
   } as any));
   const [userRole, setUserRole] = useState<string | null>('Admin');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginEmail, setLoginEmail] = useState('arunmicrogenn@gmail.com');
@@ -107,6 +108,10 @@ export default function App() {
 
   const [filter, setFilter] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'dashboard' | 'calendar' | 'customers' | 'menu' | 'invoices' | 'property' | 'contracts' | 'insights' | 'halls_master' | 'function_types_master' | 'food_plan_master' | 'seating_type_master' | 'tax_master' | 'session_master' | 'audit_trail' | 'checkout' | 'reports' | 'email_templates' | 'staff_management' | 'function_prospectus' | 'daily_audit' | 'venue-mapping'>('dashboard');
+  const handleNavClick = (view: any) => {
+    setActiveView(view);
+    setIsSidebarOpen(false);
+  };
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [dateRange, setDateRange] = useState('This Month');
@@ -596,8 +601,18 @@ export default function App() {
           outstandingDues: '₹8,12,000'
         }
       }} />
+      {/* Mobile Backdrop Overlay */}
+      {isSidebarOpen && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)}
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-30 md:hidden animate-in fade-in"
+        />
+      )}
       {/* Sidebar - Executive Deep Navy & Gold Accent Palette */}
-      <aside style={{ backgroundColor: '#080E1E' }} className="w-64 bg-[#080E1E] border-r border-slate-800 flex flex-col flex-shrink-0">
+      <aside 
+        style={{ backgroundColor: '#080E1E' }} 
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-[#080E1E] border-r border-slate-800 flex flex-col flex-shrink-0 transition-transform duration-200 ease-in-out md:static md:translate-x-0 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}
+      >
         <div className="p-3.5 border-b border-slate-800/80 flex justify-between items-center bg-slate-950/60">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg flex items-center justify-center font-black text-slate-950 text-sm shadow-xs">GH</div>
@@ -606,6 +621,13 @@ export default function App() {
               <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest block mt-0.5">Banquet ERP</span>
             </div>
           </div>
+          <button 
+            onClick={() => setIsSidebarOpen(false)} 
+            className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+            title="Close menu"
+          >
+            <X size={16} />
+          </button>
         </div>
         
         {/* User Profile Area */}
@@ -641,7 +663,7 @@ export default function App() {
           
           {(isAdmin || isManager) && (
             <button 
-              onClick={() => setActiveView('dashboard')}
+              onClick={() => handleNavClick('dashboard')}
               className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'dashboard' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
             >
               <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'dashboard' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Dashboard
@@ -649,7 +671,7 @@ export default function App() {
           )}
 
           <button 
-            onClick={() => setActiveView('calendar')}
+            onClick={() => handleNavClick('calendar')}
             className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'calendar' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
           >
             <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'calendar' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Hall Calendar
@@ -657,7 +679,7 @@ export default function App() {
 
           {(isAdmin || isManager) && (
             <button 
-              onClick={() => setActiveView('customers')}
+              onClick={() => handleNavClick('customers')}
               className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'customers' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
             >
               <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'customers' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> CRM / Customers
@@ -667,28 +689,28 @@ export default function App() {
           <div className="text-[9.5px] uppercase tracking-widest text-slate-500 font-extrabold px-3 py-1.5 mt-3">Event Execution</div>
           
           <button 
-            onClick={() => window.open('?public=true', '_blank')}
+            onClick={() => { window.open('?public=true', '_blank'); setIsSidebarOpen(false); }}
             className="flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all text-slate-400 hover:bg-slate-900 hover:text-slate-200"
           >
             <div className="w-3.5 h-3.5 rounded-xs border-2 border-slate-600"></div> Public Lobby Display
           </button>
 
           <button 
-            onClick={() => setActiveView('venue-mapping')}
+            onClick={() => handleNavClick('venue-mapping')}
             className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'venue-mapping' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
           >
             <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'venue-mapping' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Venue Mapping
           </button>
 
           <button 
-            onClick={() => setActiveView('menu')}
+            onClick={() => handleNavClick('menu')}
             className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'menu' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
           >
             <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'menu' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Menu & Catering
           </button>
 
           <button 
-            onClick={() => setActiveView('function_prospectus')}
+            onClick={() => handleNavClick('function_prospectus')}
             className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'function_prospectus' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
           >
             <ClipboardList size={15} className={activeView === 'function_prospectus' ? 'text-amber-400' : 'text-slate-500'} /> Function Prospectus (BEO)
@@ -696,7 +718,7 @@ export default function App() {
 
           {(isAdmin || isManager) && (
             <button 
-              onClick={() => setActiveView('invoices')}
+              onClick={() => handleNavClick('invoices')}
               className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'invoices' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
             >
               <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'invoices' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Invoices & Billing
@@ -705,7 +727,7 @@ export default function App() {
 
           {(isAdmin || isManager) && (
             <button 
-              onClick={() => setActiveView('property')}
+              onClick={() => handleNavClick('property')}
               className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'property' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
             >
               <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'property' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Property Config
@@ -714,7 +736,7 @@ export default function App() {
 
           {(isAdmin || isManager) && (
             <button 
-              onClick={() => setActiveView('contracts')}
+              onClick={() => handleNavClick('contracts')}
               className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'contracts' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
             >
               <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'contracts' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Contracts & Terms
@@ -723,7 +745,7 @@ export default function App() {
 
           {(isAdmin || isManager) && (
             <button 
-              onClick={() => setActiveView('insights')}
+              onClick={() => handleNavClick('insights')}
               className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'insights' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
             >
               <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'insights' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Hall Insights & Yield
@@ -734,43 +756,43 @@ export default function App() {
             <>
               <div className="text-[9.5px] uppercase tracking-widest text-slate-500 font-extrabold px-3 py-1.5 mt-3">Master Configurations</div>
               <button 
-                onClick={() => setActiveView('halls_master')}
+                onClick={() => handleNavClick('halls_master')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'halls_master' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'halls_master' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Hall Master
               </button>
               <button 
-                onClick={() => setActiveView('function_types_master')}
+                onClick={() => handleNavClick('function_types_master')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'function_types_master' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'function_types_master' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Function Types
               </button>
               <button 
-                onClick={() => setActiveView('food_plan_master')}
+                onClick={() => handleNavClick('food_plan_master')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'food_plan_master' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'food_plan_master' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Food Plan Packages
               </button>
               <button 
-                onClick={() => setActiveView('seating_type_master')}
+                onClick={() => handleNavClick('seating_type_master')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'seating_type_master' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'seating_type_master' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Seating Setups
               </button>
               <button 
-                onClick={() => setActiveView('tax_master')}
+                onClick={() => handleNavClick('tax_master')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'tax_master' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'tax_master' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Tax & GST Setup
               </button>
               <button 
-                onClick={() => setActiveView('session_master')}
+                onClick={() => handleNavClick('session_master')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'session_master' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'session_master' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Event Sessions
               </button>
               <button 
-                onClick={() => setActiveView('email_templates')}
+                onClick={() => handleNavClick('email_templates')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'email_templates' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'email_templates' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Email Templates
@@ -783,7 +805,7 @@ export default function App() {
               
               {isAdmin && (
                 <button 
-                  onClick={() => setActiveView('staff_management')}
+                  onClick={() => handleNavClick('staff_management')}
                   className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'staff_management' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
                 >
                   <Shield size={15} className={activeView === 'staff_management' ? 'text-amber-400' : 'text-slate-500'} /> Staff & Personnel
@@ -791,25 +813,25 @@ export default function App() {
               )}
 
               <button 
-                onClick={() => setActiveView('reports')}
+                onClick={() => handleNavClick('reports')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'reports' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'reports' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Financial Reports
               </button>
               <button 
-                onClick={() => setActiveView('checkout')}
+                onClick={() => handleNavClick('checkout')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'checkout' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'checkout' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Checkout Settlement
               </button>
               <button 
-                onClick={() => setActiveView('daily_audit')}
+                onClick={() => handleNavClick('daily_audit')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'daily_audit' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'daily_audit' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Daily Audit & Reconciliation
               </button>
               <button 
-                onClick={() => setActiveView('audit_trail')}
+                onClick={() => handleNavClick('audit_trail')}
                 className={`flex w-full items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'audit_trail' ? 'bg-amber-500/15 text-amber-300 border-l-2 border-amber-400 font-extrabold' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'}`}
               >
                 <div className={`w-3.5 h-3.5 rounded-xs border-2 ${activeView === 'audit_trail' ? 'border-amber-400 bg-amber-400/20' : 'border-slate-600'}`}></div> Audit Trail
@@ -821,11 +843,22 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-12 bg-white border-b border-slate-200/90 flex items-center justify-between px-4 flex-shrink-0 shadow-2xs">
-          <h1 className="text-sm font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-            {activeView === 'dashboard' ? 'Property & Operational Overview' : activeView === 'calendar' ? 'Hall Availability Calendar' : activeView === 'customers' ? 'CRM & Customer Directory' : activeView === 'menu' ? 'Menu & Catering Plans' : activeView === 'venue-mapping' ? 'Venue Mapping Layouts' : activeView === 'function_prospectus' ? 'Function Prospectus (BEO)' : activeView === 'invoices' ? 'Invoices & Billing' : activeView === 'property' ? 'Property Configuration' : activeView === 'contracts' ? 'Contract Generator' : activeView === 'insights' ? 'Hall Yield Insights' : activeView === 'halls_master' ? 'Hall Masters' : activeView === 'function_types_master' ? 'Function Type Masters' : activeView === 'food_plan_master' ? 'Food Plan Masters' : activeView === 'seating_type_master' ? 'Seating Setups' : activeView === 'tax_master' ? 'Tax Setup Masters' : activeView === 'session_master' ? 'Session Masters' : activeView === 'email_templates' ? 'Email Templates' : activeView === 'checkout' ? 'Checkout Settlement' : activeView === 'reports' ? 'Financial & Operations Reports' : activeView === 'staff_management' ? 'Staff & Personnel Directory' : activeView === 'daily_audit' ? 'Daily Audit & Reconciliation' : 'Audit Trail'}
-          </h1>
+        <header className="h-12 bg-white border-b border-slate-200/90 flex items-center justify-between px-3 md:px-4 flex-shrink-0 shadow-2xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden p-1.5 rounded-lg text-slate-600 hover:text-slate-950 hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Open Navigation Menu"
+            >
+              <Menu size={18} />
+            </button>
+            <h1 className="text-xs md:text-sm font-extrabold text-slate-900 tracking-tight flex items-center gap-2 truncate">
+              <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+              <span className="truncate">
+                {activeView === 'dashboard' ? 'Property & Operational Overview' : activeView === 'calendar' ? 'Hall Availability Calendar' : activeView === 'customers' ? 'CRM & Customer Directory' : activeView === 'menu' ? 'Menu & Catering Plans' : activeView === 'venue-mapping' ? 'Venue Mapping Layouts' : activeView === 'function_prospectus' ? 'Function Prospectus (BEO)' : activeView === 'invoices' ? 'Invoices & Billing' : activeView === 'property' ? 'Property Configuration' : activeView === 'contracts' ? 'Contract Generator' : activeView === 'insights' ? 'Hall Yield Insights' : activeView === 'halls_master' ? 'Hall Masters' : activeView === 'function_types_master' ? 'Function Type Masters' : activeView === 'food_plan_master' ? 'Food Plan Masters' : activeView === 'seating_type_master' ? 'Seating Setups' : activeView === 'tax_master' ? 'Tax Setup Masters' : activeView === 'session_master' ? 'Session Masters' : activeView === 'email_templates' ? 'Email Templates' : activeView === 'checkout' ? 'Checkout Settlement' : activeView === 'reports' ? 'Financial & Operations Reports' : activeView === 'staff_management' ? 'Staff & Personnel Directory' : activeView === 'daily_audit' ? 'Daily Audit & Reconciliation' : 'Audit Trail'}
+              </span>
+            </h1>
+          </div>
           <div className="flex items-center gap-2.5">
             {/* Global Multi-Property Switcher */}
             <div className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 px-2.5 py-1 rounded-xl transition-colors">
