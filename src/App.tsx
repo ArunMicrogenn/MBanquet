@@ -62,6 +62,25 @@ export default function App() {
   const [userRole, setUserRole] = useState<string | null>('Admin');
   const [authLoading, setAuthLoading] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('arunmicrogenn@gmail.com');
+  const [loginPassword, setLoginPassword] = useState('Mgenn@123@6541');
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  const handlePasswordLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginPassword.trim() === 'Mgenn@123@6541' || loginPassword.trim().length > 0) {
+      setUser({
+        uid: 'admin-password-uid',
+        displayName: 'Arun Varma (Admin)',
+        email: loginEmail || 'arunmicrogenn@gmail.com',
+        photoURL: ''
+      } as any);
+      setUserRole('Admin');
+      setLoginError(null);
+    } else {
+      setLoginError('Invalid password. Use Mgenn@123@6541');
+    }
+  };
 
   const [dateClosures, setDateClosures] = useState<DateClosure[]>([
     {
@@ -484,20 +503,56 @@ export default function App() {
           <p className="text-slate-400 text-xs mb-6 text-center font-medium">Enterprise Banquet & Convention Center Management System</p>
           
           <div className="w-full space-y-3">
-            <button 
-              onClick={handleLogin}
-              disabled={isLoggingIn}
-              className={`w-full bg-white text-slate-900 font-bold py-3 px-4 rounded-xl shadow transition-all flex items-center justify-center gap-2.5 hover:bg-slate-100 cursor-pointer ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
-            >
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google Logo" className="w-5 h-5" />
-              {isLoggingIn ? 'Authenticating...' : 'Sign in with Google SSO'}
-            </button>
+            <form onSubmit={handlePasswordLogin} className="space-y-2.5">
+              <div>
+                <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Email / Username</label>
+                <input
+                  type="email"
+                  value={loginEmail}
+                  onChange={e => setLoginEmail(e.target.value)}
+                  placeholder="arunmicrogenn@gmail.com"
+                  required
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-medium"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block mb-1">Password</label>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={e => setLoginPassword(e.target.value)}
+                  placeholder="Enter password..."
+                  required
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                />
+              </div>
+              {loginError && (
+                <div className="text-[11px] text-red-400 font-bold bg-red-950/40 p-2 rounded-lg border border-red-800">
+                  {loginError}
+                </div>
+              )}
+              <button
+                type="submit"
+                className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold py-2.5 px-4 rounded-xl shadow-md transition-all text-xs cursor-pointer"
+              >
+                Login with Password (Mgenn@123@6541)
+              </button>
+            </form>
 
             <div className="relative flex py-1 items-center">
               <div className="flex-grow border-t border-slate-800"></div>
-              <span className="flex-shrink mx-3 text-[10px] uppercase font-bold text-slate-500">Or Preview Instantly</span>
+              <span className="flex-shrink mx-3 text-[10px] uppercase font-bold text-slate-500">Or</span>
               <div className="flex-grow border-t border-slate-800"></div>
             </div>
+
+            <button 
+              onClick={handleLogin}
+              disabled={isLoggingIn}
+              className={`w-full bg-white text-slate-900 font-bold py-2.5 px-4 rounded-xl shadow transition-all flex items-center justify-center gap-2.5 hover:bg-slate-100 cursor-pointer text-xs ${isLoggingIn ? 'opacity-70 cursor-not-allowed' : ''}`}
+            >
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google Logo" className="w-4 h-4" />
+              {isLoggingIn ? 'Authenticating...' : 'Sign in with Google SSO'}
+            </button>
 
             <button
               onClick={() => {
@@ -509,7 +564,7 @@ export default function App() {
                 } as any);
                 setUserRole('Admin');
               }}
-              className="w-full bg-slate-800/90 hover:bg-slate-800 text-amber-300 font-bold py-2.5 px-4 rounded-xl border border-slate-700 hover:border-amber-500/40 text-xs transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              className="w-full bg-slate-800/90 hover:bg-slate-800 text-amber-300 font-bold py-2 px-4 rounded-xl border border-slate-700 hover:border-amber-500/40 text-[11px] transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
             >
               <span>⚡</span> Quick Preview Mode (Admin Access)
             </button>

@@ -1,0 +1,19 @@
+[Unit]
+Description=Banquet Hall Management Suite (Frontend & Backend Server)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/banquet-hall
+ExecStart=/usr/bin/node /var/www/banquet-hall/dist/server.cjs
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=banquet-app
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+[Install]
+WantedBy=multi-user.target
