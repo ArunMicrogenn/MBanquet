@@ -20,6 +20,7 @@ import {
   ArrowRight,
   Sliders,
   Upload,
+  Download,
   Image as ImageIcon,
   RefreshCw,
   Save,
@@ -38,6 +39,7 @@ import {
   Undo2
 } from 'lucide-react';
 import CashierReport from './CashierReport';
+import { validateBillForTally, validateBulkTallyExport, validateTallyXMLEnvelope, TallyValidationResult } from '../lib/tallyValidator';
 
 export interface ChargeItem {
   id: string;
@@ -308,8 +310,240 @@ const mockActiveBookings = [
 ];
 
 export default function CheckoutSettlement() {
-  const [activeTab, setActiveTab] = useState<'checkout' | 'reprint_history' | 'customizer' | 'cashier_report'>('checkout');
+  const [activeTab, setActiveTab] = useState<'checkout' | 'reprint_history' | 'customizer' | 'cashier_report' | 'tally_export'>('checkout');
   const [selectedBookingId, setSelectedBookingId] = useState<string>(mockActiveBookings[0].id);
+
+  const [tallyConfig, setTallyConfig] = useState(() => {
+    try {
+      const saved = safeStorage.getItem('banquet_tally_config');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error(e);
+    }
+    return {
+      salesLedger: 'Banquet Sales',
+      cgstLedger: 'CGST @ 9%',
+      sgstLedger: 'SGST @ 9%',
+      sundryGroup: 'Sundry Debtors',
+    };
+  });
+
+  const [tallyStartDate, setTallyStartDate] = useState<string>('2026-08-01');
+  const [tallyEndDate, setTallyEndDate] = useState<string>('2026-12-31');
+  const [tallyValidationModalOpen, setTallyValidationModalOpen] = useState(false);
+  const [tallyValidationResult, setTallyValidationResult] = useState<TallyValidationResult | null>(null);
+
+  const isBillInDateRange = (bill: SettledBill) => {
+    if (!tallyStartDate && !tallyEndDate) return true;
+    const billDate = new Date(bill.settledAt);
+    if (isNaN(billDate.getTime())) return true;
+    const s = tallyStartDate ? new Date(tallyStartDate) : null;
+    const e = tallyEndDate ? new Date(tallyEndDate) : null;
+    if (e) e.setHours(23, 59, 59, 999);
+    if (s && billDate < s) return false;
+    if (e && billDate > e) return false;
+    return true;
+  };
+
+  useEffect(() => {
+    try {
+      safeStorage.setItem('banquet_tally_config', JSON.stringify(tallyConfig));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [tallyConfig]);
+
+  const generateTallyXMLString = (bill: SettledBill) => {
+    const dateFormatted = bill.settledAt ? bill.settledAt.replace(/[^0-9]/g, '').slice(0, 8) : '20260821';
+    return `  <TALLYMESSAGE xmlns:UDF="TallyUDF">
+    <VOUCHER VCHTYPE="Sales" ACTION="Create" OBJVIEW="Accounting Voucher View">
+      <DATE>${dateFormatted}</DATE>
+      <VOUCHERTYPE>Sales</VOUCHERTYPE>
+      <VOUCHERNUMBER>${bill.billNo}</VOUCHERNUMBER>
+      <PARTYLEDGERNAME>${bill.customerName}</PARTYLEDGERNAME>
+      <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
+      <NARRATION>Banquet Bill ID: ${bill.billNo} | Booking: ${bill.bookingId} | Event: ${bill.eventType} | Hall: ${bill.hall}</NARRATION>
+      <ALLLEDGERENTRIES.LIST>
+        <LEDGERNAME>${bill.customerName}</LEDGERNAME>
+        <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+        <AMOUNT>-${bill.grandTotal.toFixed(2)}</AMOUNT>
+      </ALLLEDGERENTRIES.LIST>
+      <ALLLEDGERENTRIES.LIST>
+        <LEDGERNAME>${tallyConfig.salesLedger}</LEDGERNAME>
+        <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+        <AMOUNT>${bill.subtotal.toFixed(2)}</AMOUNT>
+      </ALLLEDGERENTRIES.LIST>
+      ${bill.cgst > 0 ? `
+      <ALLLEDGERENTRIES.LIST>
+        <LEDGERNAME>${tallyConfig.cgstLedger}</LEDGERNAME>
+        <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+        <AMOUNT>${bill.cgst.toFixed(2)}</AMOUNT>
+      </ALLLEDGERENTRIES.LIST>` : ''}
+      ${bill.sgst > 0 ? `
+      <ALLLEDGERENTRIES.LIST>
+        <LEDGERNAME>${tallyConfig.sgstLedger}</LEDGERNAME>
+        <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+        <AMOUNT>${bill.sgst.toFixed(2)}</AMOUNT>
+      </ALLLEDGERENTRIES.LIST>` : ''}
+    </VOUCHER>
+  </TALLYMESSAGE>`;
+  };
+
+  const handleRunTallyValidation = () => {
+    const activeBills = settledHistory.filter(b => !b.isCancelled && isBillInDateRange(b));
+    const result = validateBulkTallyExport(activeBills, tallyConfig);
+    if (activeBills.length > 0) {
+      const sampleXml = `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>Vouchers</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+${activeBills.map(b => generateTallyXMLString(b)).join('\n')}
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+      const envResult = validateTallyXMLEnvelope(sampleXml);
+      if (!envResult.isValid) {
+        result.isValid = false;
+        result.errors.push(...envResult.errors);
+      }
+      result.warnings.push(...envResult.warnings);
+    }
+    setTallyValidationResult(result);
+    setTallyValidationModalOpen(true);
+    return result;
+  };
+
+  const handleDownloadTallyXML = (bill: SettledBill) => {
+    const billValidation = validateBillForTally(bill, tallyConfig);
+    if (billValidation.errors.length > 0) {
+      setTallyValidationResult({
+        isValid: false,
+        errors: billValidation.errors,
+        warnings: billValidation.warnings,
+        summary: { totalVouchersChecked: 1, passedVouchers: 0, failedVouchers: 1 }
+      });
+      setTallyValidationModalOpen(true);
+      showToast(`Tally XML schema validation failed for bill ${bill.billNo}! Fix errors before export.`);
+      return;
+    }
+
+    const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>Vouchers</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+${generateTallyXMLString(bill)}
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+
+    const envCheck = validateTallyXMLEnvelope(xmlContent);
+    if (!envCheck.isValid) {
+      setTallyValidationResult(envCheck);
+      setTallyValidationModalOpen(true);
+      showToast('XML Envelope schema validation failed.');
+      return;
+    }
+
+    const blob = new Blob([xmlContent], { type: 'application/xml;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Tally_Sales_${bill.billNo}.xml`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Tally XML (Schema OK) for bill ${bill.billNo} downloaded successfully!`);
+  };
+
+  const handleDownloadAllTallyXML = () => {
+    const activeBills = settledHistory.filter(b => !b.isCancelled && isBillInDateRange(b));
+    if (activeBills.length === 0) {
+      showToast('No active bills found in the selected date range.');
+      return;
+    }
+
+    const validation = handleRunTallyValidation();
+    if (!validation.isValid) {
+      showToast(`Schema validation failed for ${validation.summary.failedVouchers} voucher(s). Please review errors.`);
+      return;
+    }
+
+    const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>Vouchers</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+${activeBills.map(b => generateTallyXMLString(b)).join('\n')}
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+
+    const blob = new Blob([xmlContent], { type: 'application/xml;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Tally_Bulk_Sales_Vouchers_${tallyStartDate}_to_${tallyEndDate}.xml`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Bulk Tally XML (Schema Validated OK) exported with ${activeBills.length} vouchers!`);
+  };
+
+  const handleDownloadTallyCSV = () => {
+    const activeBills = settledHistory.filter(b => !b.isCancelled && isBillInDateRange(b));
+    if (activeBills.length === 0) {
+      showToast('No active bills found in the selected date range.');
+      return;
+    }
+    const headers = ['Voucher Number', 'Date', 'Party Ledger (Customer)', 'Hall / Venue', 'Event Type', 'Subtotal (INR)', 'CGST (INR)', 'SGST (INR)', 'Grand Total (INR)', 'Payment Mode', 'Status'];
+    const rows = activeBills.map(b => [
+      `"${b.billNo}"`,
+      `"${b.settledAt}"`,
+      `"${b.customerName}"`,
+      `"${b.hall}"`,
+      `"${b.eventType}"`,
+      b.subtotal,
+      b.cgst,
+      b.sgst,
+      b.grandTotal,
+      `"${b.paymentMode}"`,
+      `"${b.isResettled ? 'Resettled' : 'Settled'}"`
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Tally_Sales_Register_${tallyStartDate}_to_${tallyEndDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`Tally CSV Register downloaded with ${activeBills.length} records (${tallyStartDate} to ${tallyEndDate})!`);
+  };
   
   // Customizer Settings State with localStorage persistence
   const [customizerSettings, setCustomizerSettings] = useState<PrintCustomizerSettings>(() => {
@@ -988,6 +1222,16 @@ export default function CheckoutSettlement() {
             }`}
           >
             <Landmark size={15} className={activeTab === 'cashier_report' ? 'text-blue-400' : ''} /> Cashier Shift Report
+          </button>
+          <button
+            onClick={() => setActiveTab('tally_export')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'tally_export'
+                ? 'bg-emerald-700 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Upload size={15} className={activeTab === 'tally_export' ? 'text-white' : 'text-emerald-600'} /> Tally Prime Export
           </button>
         </div>
       </div>
@@ -2160,6 +2404,306 @@ export default function CheckoutSettlement() {
         <CashierReport />
       )}
 
+      {/* TAB 5: TALLY PRIME EXPORT & INTEGRATION */}
+      {activeTab === 'tally_export' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-emerald-900 to-slate-900 text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/30 text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
+                  ERP Accounting Integration
+                </span>
+                <span className="text-xs text-slate-300">Tally Prime v4.0+ Certified XML & CSV</span>
+              </div>
+              <h2 className="text-xl font-extrabold tracking-tight">Tally Prime Bill & Voucher Export Suite</h2>
+              <p className="text-xs text-slate-300 mt-1 max-w-2xl">
+                Seamlessly export banquet checkout bills, tax invoices, GST breakdowns, and payment settlements into Tally Prime XML vouchers or CSV registers.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2.5">
+              <button
+                onClick={handleRunTallyValidation}
+                className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow transition-all"
+              >
+                <ShieldCheck size={15} /> Validate XML Schema
+              </button>
+              <button
+                onClick={handleDownloadAllTallyXML}
+                className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 shadow transition-all"
+              >
+                <Download size={15} /> Export All Bills to Tally XML
+              </button>
+              <button
+                onClick={handleDownloadTallyCSV}
+                className="bg-white/10 hover:bg-white/20 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 transition-all border border-white/20"
+              >
+                <FileText size={15} /> Download Tally CSV Register
+              </button>
+            </div>
+          </div>
+
+          {/* Date Range Filter Card */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl">
+                <Calendar size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Export Date Range Filter</h3>
+                <p className="text-xs text-slate-500">Select specific start and end dates to filter bills for XML/CSV bulk export.</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">From Date</label>
+                <input
+                  type="date"
+                  value={tallyStartDate}
+                  onChange={e => setTallyStartDate(e.target.value)}
+                  className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">To Date</label>
+                <input
+                  type="date"
+                  value={tallyEndDate}
+                  onChange={e => setTallyEndDate(e.target.value)}
+                  className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+              <div className="pt-4 flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { setTallyStartDate('2026-08-01'); setTallyEndDate('2026-12-31'); }}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] rounded-xl transition-colors"
+                >
+                  All 2026
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const today = new Date().toISOString().slice(0, 10);
+                    setTallyStartDate(today);
+                    setTallyEndDate(today);
+                  }}
+                  className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] rounded-xl transition-colors"
+                >
+                  Today
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Configuration & Instructions Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left: Ledger Mapping Settings */}
+            <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+                <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+                  <Sliders size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Tally Ledger Mapping Configuration</h3>
+                  <p className="text-[11px] text-slate-500">Configure ledger names matching your Tally Prime company chart of accounts.</p>
+                </div>
+              </div>
+
+              <div className="space-y-3.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">
+                    Sales Revenue Ledger Name
+                  </label>
+                  <input
+                    type="text"
+                    value={tallyConfig.salesLedger}
+                    onChange={e => setTallyConfig({ ...tallyConfig, salesLedger: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                    placeholder="e.g. Banquet Sales"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">
+                      CGST Duty Ledger
+                    </label>
+                    <input
+                      type="text"
+                      value={tallyConfig.cgstLedger}
+                      onChange={e => setTallyConfig({ ...tallyConfig, cgstLedger: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                      placeholder="e.g. CGST @ 9%"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">
+                      SGST Duty Ledger
+                    </label>
+                    <input
+                      type="text"
+                      value={tallyConfig.sgstLedger}
+                      onChange={e => setTallyConfig({ ...tallyConfig, sgstLedger: e.target.value })}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                      placeholder="e.g. SGST @ 9%"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">
+                    Sundry Debtors Group Name
+                  </label>
+                  <input
+                    type="text"
+                    value={tallyConfig.sundryGroup}
+                    onChange={e => setTallyConfig({ ...tallyConfig, sundryGroup: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+                    placeholder="e.g. Sundry Debtors"
+                  />
+                </div>
+
+                <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200/60 text-xs text-emerald-900 space-y-1">
+                  <strong className="block font-bold text-emerald-800">💡 Pro Tip for Tally Prime Import:</strong>
+                  <p className="text-[11px] text-emerald-700 leading-normal">
+                    Ensure ledger names in Tally Prime match these exact spellings. When importing, Tally automatically creates customer ledger accounts under Sundry Debtors if they do not exist.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Step-by-Step Tally Import Guide */}
+            <div className="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+                <div className="p-2 bg-blue-100 text-blue-800 rounded-xl">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">How to Import XML Vouchers into Tally Prime</h3>
+                  <p className="text-[11px] text-slate-500">Step-by-step instructions for your accountant or ERP operator.</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-xs text-slate-700">
+                <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">1</span>
+                  <div>
+                    <strong className="block font-bold text-slate-800">Open Tally Prime & Select Company</strong>
+                    <p className="text-slate-500 text-[11px] mt-0.5">Launch Tally Prime, open your company account book where banquet sales should be recorded.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">2</span>
+                  <div>
+                    <strong className="block font-bold text-slate-800">Navigate to Import Data</strong>
+                    <p className="text-slate-500 text-[11px] mt-0.5">Go to <code className="bg-slate-200 px-1 py-0.5 rounded font-bold text-slate-700">Gateway of Tally &gt; Import &gt; Vouchers</code> (Shortcut: Alt + O &gt; V).</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">3</span>
+                  <div>
+                    <strong className="block font-bold text-slate-800">Enter XML File Path</strong>
+                    <p className="text-slate-500 text-[11px] mt-0.5">Provide the absolute path of the downloaded XML file (e.g., <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-700">C:\Downloads\Tally_Bulk_Sales_Vouchers.xml</code>).</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">4</span>
+                  <div>
+                    <strong className="block font-bold text-slate-800">Verify & Complete Import</strong>
+                    <p className="text-slate-500 text-[11px] mt-0.5">Press Enter to accept and import. All sales invoices, customer ledgers, tax breakdowns, and narrations will be populated instantly!</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Settled Bills Tally Export Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-50/50">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Settled Invoices & Bills Ready for Tally Export ({tallyStartDate} to {tallyEndDate})</h3>
+                <p className="text-xs text-slate-500">Showing {settledHistory.filter(isBillInDateRange).length} matching checkout bills</p>
+              </div>
+              <div className="text-xs font-bold text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                Filtered Revenue Billed: ₹{settledHistory.filter(isBillInDateRange).reduce((acc, b) => acc + (b.isCancelled ? 0 : b.grandTotal), 0).toLocaleString('en-IN')}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100/70 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                    <th className="p-3.5">Bill / Invoice No</th>
+                    <th className="p-3.5">Customer & Booking</th>
+                    <th className="p-3.5">Hall & Event</th>
+                    <th className="p-3.5">Settlement Date</th>
+                    <th className="p-3.5 text-right">Grand Total (₹)</th>
+                    <th className="p-3.5 text-center">Payment Mode</th>
+                    <th className="p-3.5 text-center">Tally Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                  {settledHistory.filter(isBillInDateRange).length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-slate-400">
+                        No bills found within the selected date range ({tallyStartDate} to {tallyEndDate}).
+                      </td>
+                    </tr>
+                  ) : (
+                    settledHistory.filter(isBillInDateRange).map(bill => (
+                      <tr key={bill.billNo} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3.5 font-mono font-bold text-blue-700">
+                          {bill.billNo}
+                          {bill.isResettled && <span className="ml-1.5 px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[9px] rounded font-sans">Rev-{bill.version || 2}</span>}
+                          {bill.isCancelled && <span className="ml-1.5 px-1.5 py-0.5 bg-red-100 text-red-800 text-[9px] rounded font-sans">Voided</span>}
+                        </td>
+                        <td className="p-3.5">
+                          <p className="font-bold text-slate-800">{bill.customerName}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{bill.bookingId} • {bill.customerPhone}</p>
+                        </td>
+                        <td className="p-3.5">
+                          <p className="text-slate-800">{bill.hall}</p>
+                          <p className="text-[10px] text-slate-400">{bill.eventType} ({bill.pax} Pax)</p>
+                        </td>
+                        <td className="p-3.5 font-mono text-[11px] text-slate-600">
+                          {bill.settledAt}
+                        </td>
+                        <td className="p-3.5 text-right font-extrabold text-slate-900">
+                          ₹{bill.grandTotal.toLocaleString('en-IN')}
+                          <p className="text-[10px] font-normal text-slate-400">Sub: ₹{bill.subtotal.toLocaleString('en-IN')}</p>
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full text-[10px] font-bold">
+                            {bill.paymentMode}
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={bill.isCancelled}
+                              onClick={() => handleDownloadTallyXML(bill)}
+                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-2xs transition-all"
+                              title="Download Tally Prime XML Voucher"
+                            >
+                              <Download size={13} /> XML
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL 1: CANCEL ACTIVE CHECKOUT SESSION / RESET FORM */}
       {showActiveCancelModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -2476,6 +3020,129 @@ export default function CheckoutSettlement() {
               >
                 <Undo2 size={15} /> Confirm Reinstate & Reactivate
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: TALLY PRIME XML SCHEMA VALIDATION REPORT */}
+      {tallyValidationModalOpen && tallyValidationResult && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150 space-y-5">
+            <div className="flex justify-between items-start border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className={`p-3 rounded-2xl ${tallyValidationResult.isValid ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                  {tallyValidationResult.isValid ? <ShieldCheck size={26} /> : <AlertTriangle size={26} />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${tallyValidationResult.isValid ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>
+                      {tallyValidationResult.isValid ? 'Schema Validation Passed' : 'Schema Validation Failed'}
+                    </span>
+                    <span className="text-xs text-slate-400">Tally Prime v4.0 Compliance</span>
+                  </div>
+                  <h3 className="text-lg font-extrabold text-slate-800 mt-0.5">Tally Prime XML Export Compliance Report</h3>
+                </div>
+              </div>
+              <button
+                onClick={() => setTallyValidationModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center">
+                <p className="text-[10px] font-bold text-slate-400 uppercase">Vouchers Checked</p>
+                <p className="text-lg font-extrabold text-slate-800">{tallyValidationResult.summary.totalVouchersChecked}</p>
+              </div>
+              <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center">
+                <p className="text-[10px] font-bold text-emerald-700 uppercase">Passed Compliance</p>
+                <p className="text-lg font-extrabold text-emerald-800">{tallyValidationResult.summary.passedVouchers}</p>
+              </div>
+              <div className={`p-3 rounded-xl border text-center ${tallyValidationResult.summary.failedVouchers > 0 ? 'bg-red-50 border-red-200 text-red-800' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+                <p className="text-[10px] font-bold uppercase">Errors Found</p>
+                <p className="text-lg font-extrabold">{tallyValidationResult.summary.failedVouchers}</p>
+              </div>
+            </div>
+
+            {/* Errors List */}
+            {tallyValidationResult.errors.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-red-800 uppercase tracking-wide flex items-center gap-1.5">
+                  <XCircle size={14} /> Schema Compliance Errors ({tallyValidationResult.errors.length})
+                </h4>
+                <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                  {tallyValidationResult.errors.map((err, idx) => (
+                    <div key={idx} className="p-3 bg-red-50/80 border border-red-200 rounded-xl text-xs text-red-900 flex items-start gap-2.5">
+                      <AlertOctagon size={16} className="text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        {err.billNo && <span className="font-mono font-bold bg-red-200 px-1.5 py-0.5 rounded text-[10px] mr-1.5">Bill: {err.billNo}</span>}
+                        <span>{err.message}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Warnings List */}
+            {tallyValidationResult.warnings.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1.5">
+                  <AlertTriangle size={14} /> Recommendations & Warnings ({tallyValidationResult.warnings.length})
+                </h4>
+                <div className="max-h-36 overflow-y-auto space-y-2 pr-1">
+                  {tallyValidationResult.warnings.map((warn, idx) => (
+                    <div key={idx} className="p-2.5 bg-amber-50/80 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                      <AlertTriangle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        {warn.billNo && <span className="font-mono font-bold bg-amber-200 px-1.5 py-0.5 rounded text-[10px] mr-1.5">Bill: {warn.billNo}</span>}
+                        <span>{warn.message}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {tallyValidationResult.isValid && tallyValidationResult.errors.length === 0 && (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center gap-3">
+                <CheckCircle2 size={24} className="text-emerald-600 shrink-0" />
+                <div>
+                  <strong className="block font-bold text-emerald-800">All Vouchers Comply with Tally Prime Schema!</strong>
+                  <p className="text-emerald-700 text-[11px] mt-0.5">XML structure, ledger balancing (Debits == Credits), party accounts, and date formats are fully compliant for direct import into Tally Prime.</p>
+                </div>
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">
+                Utility: Tally Prime XML Validator v1.2
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTallyValidationModalOpen(false)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-colors"
+                >
+                  Close Report
+                </button>
+                {tallyValidationResult.isValid && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTallyValidationModalOpen(false);
+                      handleDownloadAllTallyXML();
+                    }}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow transition-colors flex items-center gap-1.5"
+                  >
+                    <Download size={15} /> Proceed to Download XML
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
