@@ -141,7 +141,7 @@ export default function App() {
               setUserRole('Admin');
             }
           } catch (error) {
-            console.error("Error fetching user role:", error);
+            console.warn("Could not fetch user role from Firestore, defaulting to Admin:", error);
             setUserRole('Admin');
           }
         }
@@ -174,7 +174,7 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.error("Error fetching date closures, using local fallback:", err);
+        console.warn("Could not fetch date closures from cloud, using local fallback:", err);
         const cached = safeStorage.getItem('date_closures');
         if (cached) {
           setDateClosures(JSON.parse(cached));
@@ -202,7 +202,7 @@ export default function App() {
       setTimeout(() => setToast(null), 3000);
       return true;
     } catch (err) {
-      console.error("Error saving closure to Firestore, doing local-only:", err);
+      console.warn("Could not save closure to Firestore, saved to local cache:", err);
       const updated = [...dateClosures, newClosure];
       setDateClosures(updated);
       safeStorage.setItem('date_closures', JSON.stringify(updated));
@@ -221,7 +221,7 @@ export default function App() {
       setToast({ message: 'Date closure deleted successfully!', type: 'success' });
       setTimeout(() => setToast(null), 3000);
     } catch (err) {
-      console.error("Error deleting closure from Firestore, doing local-only:", err);
+      console.warn("Could not delete closure from Firestore, deleted from local cache:", err);
       const updated = dateClosures.filter(c => c.id !== id);
       setDateClosures(updated);
       safeStorage.setItem('date_closures', JSON.stringify(updated));

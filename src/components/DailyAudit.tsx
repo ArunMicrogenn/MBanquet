@@ -137,21 +137,31 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
   // Fetch all historical audit records
   const fetchAuditHistory = async () => {
     setIsLoadingHistory(true);
+    // Pre-populate from local cache immediately for instant UI response
     try {
-      const querySnapshot = await getDocs(collection(db, 'daily_audits'));
-      const records: AuditRecord[] = [];
-      querySnapshot.forEach((docSnap) => {
-        records.push(docSnap.data() as AuditRecord);
-      });
-      // Sort by timestamp or date descending
-      records.sort((a, b) => (b.timestamp || b.date).localeCompare(a.timestamp || a.date));
-      setHistory(records);
-    } catch (error) {
-      console.error("Error loading audit history, falling back to local storage:", error);
       const cached = safeStorage.getItem('daily_audits_history');
       if (cached) {
         setHistory(JSON.parse(cached));
       }
+    } catch {
+      // ignore local parsing errors
+    }
+
+    try {
+      if (db && typeof db === 'object' && Object.keys(db).length > 0) {
+        const querySnapshot = await getDocs(collection(db, 'daily_audits'));
+        const records: AuditRecord[] = [];
+        querySnapshot.forEach((docSnap) => {
+          records.push(docSnap.data() as AuditRecord);
+        });
+        if (records.length > 0) {
+          records.sort((a, b) => (b.timestamp || b.date).localeCompare(a.timestamp || a.date));
+          setHistory(records);
+          safeStorage.setItem('daily_audits_history', JSON.stringify(records));
+        }
+      }
+    } catch (error: any) {
+      console.warn("Could not load audit history from cloud, using cached records:", error?.message || error);
     } finally {
       setIsLoadingHistory(false);
     }
@@ -163,29 +173,43 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
 
   // Sync / Load audit for the selected date range
   useEffect(() => {
+    let isCancelled = false;
+
     const loadAuditForPeriod = async () => {
+      // Step 1: Check if single date or period had a local cached record
+      const localRecord = history.find(h => h.id === currentAuditId || h.date === currentAuditDisplay);
+      if (localRecord && !isCancelled) {
+        setCurrentAudit(localRecord);
+        setActualCash(localRecord.actualCash);
+        setNotes(localRecord.notes);
+        setChecklist(localRecord.checklistState);
+        setAuditor(localRecord.auditorName);
+      }
+
+      // Step 2: If client is online and db is initialized, attempt to sync latest cloud record
       try {
-        const docRef = doc(db, 'daily_audits', currentAuditId);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          const data = docSnap.data() as AuditRecord;
-          setCurrentAudit(data);
-          setActualCash(data.actualCash);
-          setNotes(data.notes);
-          setChecklist(data.checklistState);
-          setAuditor(data.auditorName);
-        } else {
-          // Check if single date had a record with exact date string
-          const localRecord = history.find(h => h.id === currentAuditId || h.date === currentAuditDisplay);
-          if (localRecord) {
-            setCurrentAudit(localRecord);
-            setActualCash(localRecord.actualCash);
-            setNotes(localRecord.notes);
-            setChecklist(localRecord.checklistState);
-            setAuditor(localRecord.auditorName);
-          } else {
-            // New draft state
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          if (!localRecord && !isCancelled) {
+            setCurrentAudit(null);
+          }
+          return;
+        }
+
+        if (db && typeof db === 'object' && Object.keys(db).length > 0) {
+          const docRef = doc(db, 'daily_audits', currentAuditId);
+          const docSnap = await getDoc(docRef);
+          
+          if (isCancelled) return;
+
+          if (docSnap.exists()) {
+            const data = docSnap.data() as AuditRecord;
+            setCurrentAudit(data);
+            setActualCash(data.actualCash);
+            setNotes(data.notes);
+            setChecklist(data.checklistState);
+            setAuditor(data.auditorName);
+          } else if (!localRecord) {
+            // New draft state only when no local record exists
             setCurrentAudit(null);
             setActualCash(0);
             setNotes('');
@@ -199,9 +223,16 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
             });
           }
         }
-      } catch (err) {
-        console.error("Error reading period audit:", err);
-        const localRecord = history.find(h => h.id === currentAuditId || h.date === currentAuditDisplay);
+      } catch (err: any) {
+        if (isCancelled) return;
+        // Gracefully handle offline or network disconnection without triggering error toast
+        const isOffline = err?.message?.includes('offline') || err?.code === 'unavailable';
+        if (isOffline) {
+          console.warn("Firestore client is offline, using local cached audit records for period:", currentAuditDisplay);
+        } else {
+          console.warn("Could not read period audit from cloud, falling back to local records:", err?.message || err);
+        }
+
         if (localRecord) {
           setCurrentAudit(localRecord);
           setActualCash(localRecord.actualCash);
@@ -215,6 +246,10 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
     };
 
     loadAuditForPeriod();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [currentAuditId, currentAuditDisplay, history]);
 
   // Aggregate Metrics from Bookings for the period
@@ -381,8 +416,8 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
 
       onToast(`Audit for ${currentAuditDisplay} finalized and locked successfully!`, 'success');
       setCurrentAudit(auditRecord);
-    } catch (error) {
-      console.error("Firestore error saving audit, doing local-only:", error);
+    } catch (error: any) {
+      console.warn("Firestore error saving audit, saved to local storage:", error?.message || error);
       
       const auditRecord: AuditRecord = {
         id: currentAuditId,
@@ -448,9 +483,9 @@ export default function DailyAudit({ bookings, userRole, userEmail, onToast }: D
       setCurrentAudit(null);
       
       onToast(`Audit for ${currentAuditDisplay} is now unlocked and open for editing.`, 'success');
-    } catch (err) {
-      console.error("Error unlocking audit:", err);
-      onToast("Failed to unlock from Firestore. Doing local unlock.", "error");
+    } catch (err: any) {
+      console.warn("Could not unlock audit in cloud, unlocked in local cache:", err?.message || err);
+      onToast(`Audit for ${currentAuditDisplay} unlocked locally.`, "success");
       
       const updatedHistory = history.filter(h => h.id !== currentAuditId && h.date !== currentAuditDisplay);
       setHistory(updatedHistory);

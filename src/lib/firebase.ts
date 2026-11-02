@@ -1,6 +1,16 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
+import { 
+  getFirestore, 
+  initializeFirestore, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  collection, 
+  getDocs, 
+  updateDoc, 
+  deleteDoc 
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 let app: any;
@@ -10,7 +20,18 @@ let db: any;
 try {
   app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
   auth = getAuth(app);
-  db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  if (getApps().length > 1) {
+    db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  } else {
+    try {
+      db = initializeFirestore(app, {
+        experimentalAutoDetectLongPolling: true,
+        ignoreUndefinedProperties: true
+      }, firebaseConfig.firestoreDatabaseId);
+    } catch {
+      db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+    }
+  }
 } catch (error) {
   console.warn('Firebase initialization in preview/sandbox fallback mode:', error);
   auth = {
@@ -19,6 +40,19 @@ try {
   };
   db = {} as any;
 }
+
+export const isOfflineOrUnavailable = (error: unknown): boolean => {
+  if (!error) return false;
+  const msg = error instanceof Error ? error.message : String(error);
+  const code = (error as any)?.code || '';
+  return (
+    msg.includes('offline') ||
+    msg.includes('unavailable') ||
+    code === 'unavailable' ||
+    code === 'failed-precondition' ||
+    code === 'permission-denied'
+  );
+};
 
 export { auth, db };
 

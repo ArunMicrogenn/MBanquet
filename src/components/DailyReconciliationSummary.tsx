@@ -179,8 +179,8 @@ export default function DailyReconciliationSummary({
         onUpdateExpectedCash(cashTotal);
       }
 
-    } catch (error) {
-      console.error("Error loading transaction data, doing local-only seed:", error);
+    } catch (error: any) {
+      console.warn("Could not load cloud transactions, using local seed data:", error?.message || error);
       const datesToSeed = isDateRange 
         ? getDatesInRange(effectiveStartDate, effectiveEndDate) 
         : [effectiveStartDate];

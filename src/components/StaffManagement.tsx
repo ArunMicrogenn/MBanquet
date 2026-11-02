@@ -189,7 +189,7 @@ export default function StaffManagement() {
         setUsers(usersData);
       }
     } catch (error) {
-      console.error('Error fetching users from Firestore, using default dataset:', error);
+      console.warn('Could not fetch users from Firestore, using default dataset:', error);
       setUsers(DEFAULT_STAFF);
     } finally {
       setIsLoading(false);

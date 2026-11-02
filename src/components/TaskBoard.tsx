@@ -61,7 +61,7 @@ export default function TaskBoard() {
           setStaff(names);
         }
       } catch (error) {
-        console.error("Failed to fetch staff list from Firestore:", error);
+        console.warn("Could not fetch staff list from Firestore, using default staff:", error);
       }
     };
     fetchStaff();
@@ -89,7 +89,7 @@ export default function TaskBoard() {
           setTasks(dbTasks);
         }
       } catch (error) {
-        console.error("Failed to fetch tasks from Firestore:", error);
+        console.warn("Could not fetch tasks from Firestore, using local cached tasks:", error);
       }
     };
     fetchTasks();
